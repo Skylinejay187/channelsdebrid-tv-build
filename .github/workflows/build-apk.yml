@@ -25,6 +25,13 @@ jobs:
           fi
           echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
 
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
       - name: Rewrite settings.gradle.kts
         run: |
           cat > "$ROOT_DIR/settings.gradle.kts" <<'EOF'
@@ -426,110 +433,40 @@ jobs:
           }
           EOF
 
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - uses: android-actions/setup-android@v3
-
-      - name: Rewrite settings.gradle.kts
-        run: |
-          cat > "$ROOT_DIR/settings.gradle.kts" <<'EOF'
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-
-          rootProject.name = "ChannelsDebridTV"
-          include(":app")
-          EOF
-
-      - name: Rewrite root build.gradle.kts
-        run: |
-          cat > "$ROOT_DIR/build.gradle.kts" <<'EOF'
-          plugins {
-              id("com.android.application") version "8.6.0" apply false
-              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
-          }
-          EOF
-
-      - name: Rewrite app build.gradle.kts
-        run: |
-          cat > "$ROOT_DIR/app/build.gradle.kts" <<'EOF'
-          plugins {
-              id("com.android.application")
-              id("org.jetbrains.kotlin.android")
-          }
-
-          android {
-              namespace = "com.channelsdebrid.tv"
-              compileSdk = 35
-
-              defaultConfig {
-                  applicationId = "com.channelsdebrid.tv"
-                  minSdk = 26
-                  targetSdk = 34
-                  versionCode = 1
-                  versionName = "0.1.0"
-              }
-
-              buildTypes {
-                  release {
-                      isMinifyEnabled = false
-                  }
-              }
-
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-              }
-
-              kotlinOptions {
-                  jvmTarget = "17"
-              }
-
-              buildFeatures {
-                  viewBinding = true
-              }
-          }
-
-          dependencies {
-              implementation("androidx.core:core-ktx:1.13.1")
-              implementation("androidx.appcompat:appcompat:1.7.0")
-              implementation("androidx.activity:activity-ktx:1.9.2")
-              implementation("androidx.leanback:leanback:1.2.0")
-              implementation("androidx.webkit:webkit:1.11.0")
-              implementation("androidx.media3:media3-exoplayer:1.4.1")
-              implementation("androidx.media3:media3-ui:1.4.1")
-              implementation("androidx.media3:media3-common:1.4.1")
-          }
-          EOF
-
-      - name: Write gradle.properties
-        run: |
-          cat > "$ROOT_DIR/gradle.properties" <<'EOF'
-          android.useAndroidX=true
-          android.enableJetifier=true
-          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
-          kotlin.code.style=official
-          EOF
-
-      - name: Fix XML ampersand
-        run: |
-          sed -i 's/Save & Open/Save \&amp; Open/g' "$ROOT_DIR/app/src/main/res/layout/activity_server_setup.xml" || true
-
       - name: Install Gradle
         run: |
-          sudo a
+          sudo apt-get update
+          sudo apt-get install -y gradle
+
+      - name: Setup Gradle Wrapper
+        run: |
+          cd "$ROOT_DIR"
+          if [ ! -f "./gradlew" ]; then
+            gradle wrapper --gradle-version 8.7
+          fi
+          chmod +x ./gradlew
+          mkdir -p gradle/wrapper
+          cat > gradle/wrapper/gradle-wrapper.properties <<'EOF'
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.7-bin.zip
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          EOF
+
+      - name: Build APK
+        run: |
+          cd "$ROOT_DIR"
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Find APK
+        if: always()
+        run: |
+          find project -name "*.apk" | sort || true
+
+      - name: Upload APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: channelsdebrid-tv-apk
+          path: project/**/*.apk
