@@ -19,10 +19,7 @@ jobs:
         run: |
           ROOT_DIR=$(find project -type d -name "android-tv-client" | head -n 1)
           echo "ROOT_DIR=$ROOT_DIR"
-          if [ -z "$ROOT_DIR" ]; then
-            echo "android-tv-client not found"
-            exit 1
-          fi
+          test -n "$ROOT_DIR"
           echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
 
       - uses: actions/setup-java@v4
@@ -56,11 +53,39 @@ jobs:
                       </intent-filter>
                   </activity>
 
-                  <activity android:name=".HomeActivity" android:exported="true" />
-                  <activity android:name=".PlayerActivity" android:exported="false" />
-                  <activity android:name=".AppsActivity" android:exported="false" />
-                  <activity android:name=".ServerSetupActivity" android:exported="false" />
-                  <activity android:name=".SettingsActivity" android:exported="false" />
+                  <activity
+                      android:name=".HomeActivity"
+                      android:exported="true"
+                      android:screenOrientation="landscape" />
+
+                  <activity
+                      android:name=".PlayerActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
+
+                  <activity
+                      android:name=".AppsActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
+
+                  <activity
+                      android:name=".ServerSetupActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
+
+                  <activity
+                      android:name=".SettingsActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
+
+                  <receiver
+                      android:name=".BootReceiver"
+                      android:enabled="true"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.BOOT_COMPLETED" />
+                      </intent-filter>
+                  </receiver>
 
               </application>
           </manifest>
@@ -132,6 +157,10 @@ jobs:
               kotlinOptions {
                   jvmTarget = "17"
               }
+
+              buildFeatures {
+                  viewBinding = true
+              }
           }
 
           dependencies {
@@ -139,8 +168,10 @@ jobs:
               implementation("androidx.appcompat:appcompat:1.7.0")
               implementation("androidx.activity:activity-ktx:1.9.2")
               implementation("androidx.leanback:leanback:1.2.0")
+              implementation("androidx.webkit:webkit:1.11.0")
               implementation("androidx.media3:media3-exoplayer:1.4.1")
               implementation("androidx.media3:media3-ui:1.4.1")
+              implementation("androidx.media3:media3-common:1.4.1")
           }
           EOF
 
@@ -149,7 +180,8 @@ jobs:
           cat > "$ROOT_DIR/gradle.properties" <<'EOF'
           android.useAndroidX=true
           android.enableJetifier=true
-          org.gradle.jvmargs=-Xmx4096m
+          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+          kotlin.code.style=official
           EOF
 
       - name: Rewrite activity_server_setup.xml
@@ -234,43 +266,235 @@ jobs:
           </ScrollView>
           EOF
 
-      - name: Install Gradle
+      - name: Rewrite AppsActivity.kt
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gradle
+          cat > "$ROOT_DIR/app/src/main/java/com/channelsdebrid/tv/AppsActivity.kt" <<'EOF'
+          package com.channelsdebrid.tv
 
-      - name: Setup Gradle Wrapper
-        run: |
-          cd "$ROOT_DIR"
-          if [ ! -f "./gradlew" ]; then
-            gradle wrapper --gradle-version 8.7
-          fi
-          chmod +x ./gradlew
-          mkdir -p gradle/wrapper
-          cat > gradle/wrapper/gradle-wrapper.properties <<'EOF'
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-8.7-bin.zip
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.graphics.Color
+          import android.graphics.drawable.ColorDrawable
+          import android.graphics.drawable.Drawable
+          import android.os.Bundle
+          import android.util.TypedValue
+          import android.view.Gravity
+          import android.view.View
+          import android.view.ViewGroup
+          import android.widget.AbsListView
+          import android.widget.BaseAdapter
+          import android.widget.GridView
+          import android.widget.ImageView
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import androidx.appcompat.app.AppCompatActivity
+
+          class AppsActivity : AppCompatActivity() {
+
+              data class AppEntry(
+                  val label: String,
+                  val packageName: String,
+                  val activityName: String,
+                  val icon: Drawable?
+              )
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  val pm = packageManager
+                  val intent = Intent(Intent.ACTION_MAIN, null).apply {
+                      addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+                  }
+
+                  val apps = pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)
+                      .map {
+                          AppEntry(
+                              label = it.loadLabel(pm).toString(),
+                              packageName = it.activityInfo.packageName,
+                              activityName = it.activityInfo.name,
+                              icon = it.loadIcon(pm)
+                          )
+                      }
+                      .sortedBy { it.label.lowercase() }
+
+                  val grid = GridView(this).apply {
+                      numColumns = 4
+                      horizontalSpacing = dp(18)
+                      verticalSpacing = dp(18)
+                      stretchMode = GridView.STRETCH_COLUMN_WIDTH
+                      clipToPadding = false
+                      setPadding(dp(28), dp(28), dp(28), dp(28))
+                      setBackgroundColor(Color.parseColor("#05070C"))
+                      selector = ColorDrawable(Color.TRANSPARENT)
+                      adapter = AppsAdapter(apps)
+                      isFocusable = true
+                      isFocusableInTouchMode = true
+                  }
+
+                  grid.setOnItemClickListener { _, _, position, _ ->
+                      val app = apps[position]
+                      val launch = Intent(Intent.ACTION_MAIN).apply {
+                          addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+                          setClassName(app.packageName, app.activityName)
+                          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                      }
+                      startActivity(launch)
+                  }
+
+                  setContentView(grid)
+              }
+
+              private fun dp(value: Int): Int {
+                  return TypedValue.applyDimension(
+                      TypedValue.COMPLEX_UNIT_DIP,
+                      value.toFloat(),
+                      resources.displayMetrics
+                  ).toInt()
+              }
+
+              inner class AppsAdapter(private val items: List<AppEntry>) : BaseAdapter() {
+                  override fun getCount(): Int = items.size
+                  override fun getItem(position: Int): Any = items[position]
+                  override fun getItemId(position: Int): Long = position.toLong()
+
+                  override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+                      val context = this@AppsActivity
+                      val entry = items[position]
+
+                      val root = if (convertView == null) {
+                          LinearLayout(context).apply {
+                              orientation = LinearLayout.VERTICAL
+                              gravity = Gravity.CENTER_HORIZONTAL
+                              setPadding(dp(14), dp(14), dp(14), dp(14))
+                              setBackgroundColor(Color.parseColor("#141923"))
+                              layoutParams = AbsListView.LayoutParams(
+                                  ViewGroup.LayoutParams.MATCH_PARENT,
+                                  dp(210)
+                              )
+                              isFocusable = true
+                              isClickable = true
+                          }
+                      } else {
+                          convertView as LinearLayout
+                      }
+
+                      root.removeAllViews()
+
+                      val icon = ImageView(context).apply {
+                          layoutParams = LinearLayout.LayoutParams(dp(84), dp(84))
+                          setImageDrawable(entry.icon)
+                      }
+
+                      val label = TextView(context).apply {
+                          text = entry.label
+                          setTextColor(Color.WHITE)
+                          setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                          gravity = Gravity.CENTER
+                          maxLines = 2
+                          setPadding(0, dp(12), 0, 0)
+                      }
+
+                      root.addView(icon)
+                      root.addView(label)
+
+                      root.setOnFocusChangeListener { v, hasFocus ->
+                          v.scaleX = if (hasFocus) 1.06f else 1.0f
+                          v.scaleY = if (hasFocus) 1.06f else 1.0f
+                          v.alpha = if (hasFocus) 1.0f else 0.96f
+                      }
+
+                      return root
+                  }
+              }
+          }
           EOF
 
-      - name: Build APK
+      - name: Rewrite PlayerActivity.kt
         run: |
-          cd "$ROOT_DIR"
-          ./gradlew assembleDebug --stacktrace
+          cat > "$ROOT_DIR/app/src/main/java/com/channelsdebrid/tv/PlayerActivity.kt" <<'EOF'
+          package com.channelsdebrid.tv
 
-      - name: Locate APK
-        run: |
-          find . -name "*.apk"
+          import android.net.Uri
+          import android.os.Bundle
+          import android.view.KeyEvent
+          import android.view.View
+          import android.widget.TextView
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.media3.common.C
+          import androidx.media3.common.MediaItem
+          import androidx.media3.common.PlaybackException
+          import androidx.media3.common.Player
+          import androidx.media3.common.Tracks
+          import androidx.media3.exoplayer.ExoPlayer
+          import androidx.media3.ui.PlayerView
 
-      - name: Copy APK
-        run: |
-          APK=$(find . -name "*.apk" | head -n 1)
-          cp "$APK" app.apk
+          class PlayerActivity : AppCompatActivity() {
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: channelsdebrid-tv-apk
-          path: app.apk
+              private var player: ExoPlayer? = null
+              private lateinit var playerView: PlayerView
+              private lateinit var titleText: TextView
+              private lateinit var metaText: TextView
+              private lateinit var controlsHint: TextView
+              private lateinit var trackHint: TextView
+
+              private var resumeMs: Long = 0L
+              private var hintVisible = true
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_player)
+
+                  playerView = findViewById(R.id.playerView)
+                  titleText = findViewById(R.id.titleText)
+                  metaText = findViewById(R.id.metaText)
+                  controlsHint = findViewById(R.id.controlsHint)
+                  trackHint = findViewById(R.id.trackHint)
+
+                  val title = intent.getStringExtra(EXTRA_TITLE) ?: "Native Player"
+                  val url = intent.getStringExtra(EXTRA_URL) ?: ""
+                  val subtitle = intent.getStringExtra(EXTRA_META) ?: "Media3 / ExoPlayer playback"
+                  resumeMs = intent.getLongExtra(EXTRA_RESUME_MS, 0L)
+
+                  titleText.text = title
+                  metaText.text = subtitle
+                  controlsHint.text = "DPAD center: play/pause • Left/Right: seek 10s • Up/Down: show controls"
+                  trackHint.text = "Audio/Subtitles scaffold"
+
+                  if (url.isNotBlank()) {
+                      initializePlayer(url, title)
+                  } else {
+                      metaText.text = "No playback URL supplied. Launch PlayerActivity with EXTRA_URL."
+                  }
+              }
+
+              private fun initializePlayer(url: String, title: String) {
+                  val exoPlayer = ExoPlayer.Builder(this).build()
+                  player = exoPlayer
+                  playerView.player = exoPlayer
+
+                  val mediaItem = MediaItem.Builder()
+                      .setUri(Uri.parse(url))
+                      .setMediaId(title)
+                      .build()
+
+                  exoPlayer.addListener(object : Player.Listener {
+                      override fun onPlaybackStateChanged(playbackState: Int) {
+                          metaText.text = when (playbackState) {
+                              Player.STATE_BUFFERING -> "Buffering…"
+                              Player.STATE_READY -> if (resumeMs > 0L) {
+                                  "Playing in native Media3 player • resumed"
+                              } else {
+                                  "Playing in native Media3 player"
+                              }
+                              Player.STATE_ENDED -> "Playback ended"
+                              else -> metaText.text
+                          }
+                      }
+
+                      override fun onPlayerError(error: PlaybackException) {
+                          metaText.text = "Playback error: ${error.errorCodeName}"
+                      }
+
+                      override fun onTracksChanged(tracks: Tracks) {
+                          val hasText = tracks.groups.any { group -> group.type == C.TRACK_TYPE_TEXT }
+                          val hasAudio = tracks.groups.any { group -> group.type == C.TRACK_TY
