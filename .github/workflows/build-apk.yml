@@ -53,40 +53,11 @@ jobs:
                       </intent-filter>
                   </activity>
 
-                  <activity
-                      android:name=".HomeActivity"
-                      android:exported="true"
-                      android:screenOrientation="landscape" />
-
-                  <activity
-                      android:name=".PlayerActivity"
-                      android:exported="false"
-                      android:screenOrientation="landscape" />
-
-                  <activity
-                      android:name=".AppsActivity"
-                      android:exported="false"
-                      android:screenOrientation="landscape" />
-
-                  <activity
-                      android:name=".ServerSetupActivity"
-                      android:exported="false"
-                      android:screenOrientation="landscape" />
-
-                  <activity
-                      android:name=".SettingsActivity"
-                      android:exported="false"
-                      android:screenOrientation="landscape" />
-
-                  <receiver
-                      android:name=".BootReceiver"
-                      android:enabled="true"
-                      android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.BOOT_COMPLETED" />
-                      </intent-filter>
-                  </receiver>
-
+                  <activity android:name=".HomeActivity" android:exported="true" android:screenOrientation="landscape" />
+                  <activity android:name=".PlayerActivity" android:exported="false" android:screenOrientation="landscape" />
+                  <activity android:name=".AppsActivity" android:exported="false" android:screenOrientation="landscape" />
+                  <activity android:name=".ServerSetupActivity" android:exported="false" android:screenOrientation="landscape" />
+                  <activity android:name=".SettingsActivity" android:exported="false" android:screenOrientation="landscape" />
               </application>
           </manifest>
           EOF
@@ -290,7 +261,6 @@ jobs:
           import androidx.appcompat.app.AppCompatActivity
 
           class AppsActivity : AppCompatActivity() {
-
               data class AppEntry(
                   val label: String,
                   val packageName: String,
@@ -344,13 +314,12 @@ jobs:
                   setContentView(grid)
               }
 
-              private fun dp(value: Int): Int {
-                  return TypedValue.applyDimension(
+              private fun dp(value: Int): Int =
+                  TypedValue.applyDimension(
                       TypedValue.COMPLEX_UNIT_DIP,
                       value.toFloat(),
                       resources.displayMetrics
                   ).toInt()
-              }
 
               inner class AppsAdapter(private val items: List<AppEntry>) : BaseAdapter() {
                   override fun getCount(): Int = items.size
@@ -424,7 +393,7 @@ jobs:
           import androidx.media3.common.MediaItem
           import androidx.media3.common.PlaybackException
           import androidx.media3.common.Player
-          import androidx.media3.common.Tracks
+          import androidx.media3.common.TrackGroup
           import androidx.media3.exoplayer.ExoPlayer
           import androidx.media3.ui.PlayerView
 
@@ -495,6 +464,26 @@ jobs:
                           metaText.text = "Playback error: ${error.errorCodeName}"
                       }
 
-                      override fun onTracksChanged(tracks: Tracks) {
-                          val hasText = tracks.groups.any { group -> group.type == C.TRACK_TYPE_TEXT }
-                          val hasAudio = tracks.groups.any { group -> group.type == C.TRACK_TY
+                      override fun onTracksChanged(tracks: Player.Tracks) {
+                          var hasText = false
+                          var hasAudio = false
+
+                          for (group in tracks.groups) {
+                              if (group.type == C.TRACK_TYPE_TEXT && group.isSupported) {
+                                  hasText = true
+                              }
+                              if (group.type == C.TRACK_TYPE_AUDIO && group.isSupported) {
+                                  hasAudio = true
+                              }
+                          }
+
+                          trackHint.text = buildString {
+                              append("Audio: ")
+                              append(if (hasAudio) "available" else "none")
+                              append(" • Subtitles: ")
+                              append(if (hasText) "available" else "none")
+                          }
+                      }
+                  })
+
+    
