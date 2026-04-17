@@ -32,7 +32,12 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Fix settings.gradle.kts
+      - name: Install Android 35 SDK pieces
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Rewrite settings.gradle.kts
         run: |
           cat > "$ROOT_DIR/settings.gradle.kts" <<'EOF'
           pluginManagement {
@@ -55,17 +60,18 @@ jobs:
           include(":app")
           EOF
 
-      - name: Fix root build.gradle.kts
+      - name: Rewrite root build.gradle.kts
         run: |
           cat > "$ROOT_DIR/build.gradle.kts" <<'EOF'
           plugins {
-              id("com.android.application") version "8.2.2" apply false
+              id("com.android.application") version "8.6.1" apply false
               id("org.jetbrains.kotlin.android") version "1.9.24" apply false
           }
           EOF
 
-      - name: Fix app build.gradle.kts
+      - name: Rewrite app build.gradle.kts
         run: |
+          mkdir -p "$ROOT_DIR/app"
           cat > "$ROOT_DIR/app/build.gradle.kts" <<'EOF'
           plugins {
               id("com.android.application")
@@ -74,12 +80,12 @@ jobs:
 
           android {
               namespace = "com.channelsdebrid.tv"
-              compileSdk = 34
+              compileSdk = 35
 
               defaultConfig {
                   applicationId = "com.channelsdebrid.tv"
                   minSdk = 26
-                  targetSdk = 34
+                  targetSdk = 35
                   versionCode = 1
                   versionName = "1.0"
               }
@@ -153,11 +159,30 @@ jobs:
                       </intent-filter>
                   </activity>
 
-                  <activity android:name=".HomeActivity" android:exported="true" />
-                  <activity android:name=".PlayerActivity" android:exported="false" />
-                  <activity android:name=".AppsActivity" android:exported="false" />
-                  <activity android:name=".ServerSetupActivity" android:exported="false" />
-                  <activity android:name=".SettingsActivity" android:exported="false" />
+                  <activity
+                      android:name=".HomeActivity"
+                      android:exported="true"
+                      android:screenOrientation="landscape" />
+
+                  <activity
+                      android:name=".PlayerActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
+
+                  <activity
+                      android:name=".AppsActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
+
+                  <activity
+                      android:name=".ServerSetupActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
+
+                  <activity
+                      android:name=".SettingsActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
               </application>
           </manifest>
           EOF
@@ -491,32 +516,4 @@ jobs:
 
       - name: Install Gradle
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gradle
-
-      - name: Build APK
-        run: |
-          cd "$ROOT_DIR"
-
-          if [ ! -f "./gradlew" ]; then
-            echo "Gradle wrapper missing — generating..."
-            gradle wrapper --gradle-version 8.7
-          fi
-
-          chmod +x ./gradlew
-          ./gradlew assembleDebug --stacktrace
-
-      - name: Collect APK
-        run: |
-          echo "Searching for APK..."
-          find "$ROOT_DIR" -type f -name "*.apk"
-
-          APK_PATH=$(find "$ROOT_DIR" -type f -name "*.apk" | head -n 1)
-
-          if [ -z "$APK_PATH" ]; then
-            echo "APK NOT FOUND"
-            exit 1
-          fi
-
-          echo "Found APK at: $APK_PATH"
-          cp "$APK_PATH" "$GITHUB_WORK
+       
