@@ -19,7 +19,10 @@ jobs:
         run: |
           ROOT_DIR=$(find project -type d -name "android-tv-client" | head -n 1)
           echo "ROOT_DIR=$ROOT_DIR"
-          if [ -z "$ROOT_DIR" ]; then exit 1; fi
+          if [ -z "$ROOT_DIR" ]; then
+            echo "android-tv-client not found"
+            exit 1
+          fi
           echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
 
       - uses: actions/setup-java@v4
@@ -29,30 +32,59 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      # ✅ FIX MANIFEST
-      - name: Fix Manifest
+      - name: Rewrite AndroidManifest.xml
         run: |
-          sed -i 's/package="com.channelsdebrid.tv"//g' "$ROOT_DIR/app/src/main/AndroidManifest.xml"
-          sed -i 's/com.channelsdebrid.tv.tv./com.channelsdebrid.tv./g' "$ROOT_DIR/app/src/main/AndroidManifest.xml"
+          cat > "$ROOT_DIR/app/src/main/AndroidManifest.xml" <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-      # ✅ FIX ALL XML (& crash fix)
-      - name: Fix XML ampersands
-        run: |
-          find "$ROOT_DIR" -name "*.xml" -type f -exec sed -i 's/& /&amp; /g' {} +
-          find "$ROOT_DIR" -name "*.xml" -type f -exec sed -i 's/&</&amp;</g' {} +
-          find "$ROOT_DIR" -name "*.xml" -type f -exec sed -i 's/&"/&amp;"/g' {} +
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-      # ✅ FIX GRADLE FILES
+              <application
+                  android:allowBackup="true"
+                  android:label="ChannelsDebrid TV"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.ChannelsDebridTV">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:screenOrientation="landscape">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <activity android:name=".HomeActivity" android:exported="true" />
+                  <activity android:name=".PlayerActivity" android:exported="false" />
+                  <activity android:name=".AppsActivity" android:exported="false" />
+                  <activity android:name=".ServerSetupActivity" android:exported="false" />
+                  <activity android:name=".SettingsActivity" android:exported="false" />
+
+              </application>
+          </manifest>
+          EOF
+
       - name: Rewrite settings.gradle.kts
         run: |
           cat > "$ROOT_DIR/settings.gradle.kts" <<'EOF'
           pluginManagement {
-              repositories { google(); mavenCentral(); gradlePluginPortal() }
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
           }
+
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories { google(); mavenCentral() }
+              repositories {
+                  google()
+                  mavenCentral()
+              }
           }
+
           rootProject.name = "ChannelsDebridTV"
           include(":app")
           EOF
@@ -86,6 +118,12 @@ jobs:
                   versionName = "1.0"
               }
 
+              buildTypes {
+                  release {
+                      isMinifyEnabled = false
+                  }
+              }
+
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
@@ -108,30 +146,124 @@ jobs:
 
       - name: Write gradle.properties
         run: |
-          echo "android.useAndroidX=true" >> "$ROOT_DIR/gradle.properties"
-          echo "android.enableJetifier=true" >> "$ROOT_DIR/gradle.properties"
+          cat > "$ROOT_DIR/gradle.properties" <<'EOF'
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.jvmargs=-Xmx4096m
+          EOF
 
-      # ✅ GRADLE WRAPPER
+      - name: Rewrite activity_server_setup.xml
+        run: |
+          mkdir -p "$ROOT_DIR/app/src/main/res/layout"
+          cat > "$ROOT_DIR/app/src/main/res/layout/activity_server_setup.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="#05070C">
+
+              <LinearLayout
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:orientation="vertical"
+                  android:padding="32dp">
+
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:text="Connect to your ChannelsDebrid backend"
+                      android:textColor="#FFFFFF"
+                      android:textSize="28sp"
+                      android:textStyle="bold" />
+
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="10dp"
+                      android:text="Enter your backend URL or auto-detect it on your local network."
+                      android:textColor="#C6D8FF"
+                      android:textSize="16sp" />
+
+                  <EditText
+                      android:id="@+id/backendUrlInput"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="20dp"
+                      android:background="#141923"
+                      android:hint="http://192.168.1.50:8418/app"
+                      android:padding="16dp"
+                      android:textColor="#FFFFFF"
+                      android:textColorHint="#88A0CC" />
+
+                  <LinearLayout
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="18dp"
+                      android:orientation="horizontal">
+
+                      <Button
+                          android:id="@+id/testServerBtn"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:text="Test" />
+
+                      <Button
+                          android:id="@+id/autoDetectBtn"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:layout_marginStart="12dp"
+                          android:text="Auto Detect" />
+
+                      <Button
+                          android:id="@+id/saveServerBtn"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:layout_marginStart="12dp"
+                          android:text="Save &amp; Open" />
+                  </LinearLayout>
+
+                  <TextView
+                      android:id="@+id/serverStatus"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="18dp"
+                      android:text="No server selected yet."
+                      android:textColor="#AFC7FF"
+                      android:textSize="14sp" />
+              </LinearLayout>
+          </ScrollView>
+          EOF
+
+      - name: Install Gradle
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gradle
+
       - name: Setup Gradle Wrapper
         run: |
           cd "$ROOT_DIR"
           if [ ! -f "./gradlew" ]; then
             gradle wrapper --gradle-version 8.7
           fi
-          chmod +x gradlew
+          chmod +x ./gradlew
+          mkdir -p gradle/wrapper
+          cat > gradle/wrapper/gradle-wrapper.properties <<'EOF'
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.7-bin.zip
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          EOF
 
-      # ✅ BUILD
       - name: Build APK
         run: |
           cd "$ROOT_DIR"
           ./gradlew assembleDebug --stacktrace
 
-      # ✅ FIND APK
-      - name: Find APK
+      - name: Locate APK
         run: |
           find . -name "*.apk"
 
-      # ✅ GUARANTEED ARTIFACT
       - name: Copy APK
         run: |
           APK=$(find . -name "*.apk" | head -n 1)
