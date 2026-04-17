@@ -1,4 +1,4 @@
-name: Build Android TV APK from ZIP
+name: Build Android TV APK (FULL FIXED)
 
 on:
   workflow_dispatch:
@@ -8,38 +8,59 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      # -------------------------------
+      # CHECKOUT
+      # -------------------------------
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Unzip project
+      # -------------------------------
+      # UNZIP PROJECT
+      # -------------------------------
+      - name: Extract ZIP
         run: |
           mkdir -p project
-          unzip channelsdebrid-final-merged-github-apk-v52-backend-setup-fresh.zip -d project
+          unzip -o channelsdebrid-final-merged-github-apk-v52-backend-setup-fresh.zip -d project
 
-      - name: Locate Android project
+      # -------------------------------
+      # LOCATE ANDROID PROJECT
+      # -------------------------------
+      - name: Locate Android root
         run: |
           ROOT_DIR=$(find project -type d -name "android-tv-client" | head -n 1)
           echo "ROOT_DIR=$ROOT_DIR"
-          test -n "$ROOT_DIR"
-          echo "ROOT_DIR=$ROOT_DIR" >> "$GITHUB_ENV"
+          if [ -z "$ROOT_DIR" ]; then
+            echo "❌ android-tv-client not found"
+            exit 1
+          fi
+          echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
 
+      # -------------------------------
+      # JAVA
+      # -------------------------------
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
+      # -------------------------------
+      # ANDROID SDK
+      # -------------------------------
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android 35 SDK pieces
+      - name: Install SDK 35
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
+          yes | sdkmanager --licenses || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Rewrite settings.gradle.kts
+      # -------------------------------
+      # FORCE GRADLE SETTINGS
+      # -------------------------------
+      - name: Rewrite settings.gradle
         run: |
-          cat > "$ROOT_DIR/settings.gradle.kts" <<'EOF'
+          cat > "$ROOT_DIR/settings.gradle" <<'EOF'
           pluginManagement {
               repositories {
                   google()
@@ -49,7 +70,6 @@ jobs:
           }
 
           dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
               repositories {
                   google()
                   mavenCentral()
@@ -57,51 +77,75 @@ jobs:
           }
 
           rootProject.name = "ChannelsDebridTV"
-          include(":app")
+          include ':app'
           EOF
 
-      - name: Rewrite root build.gradle.kts
+      # -------------------------------
+      # FORCE ROOT BUILD FILE
+      # -------------------------------
+      - name: Rewrite root build.gradle
         run: |
-          cat > "$ROOT_DIR/build.gradle.kts" <<'EOF'
-          plugins {
-              id("com.android.application") version "8.6.1" apply false
-              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          cat > "$ROOT_DIR/build.gradle" <<'EOF'
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath "com.android.tools.build:gradle:8.6.1"
+                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24"
+              }
+          }
+
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
           }
           EOF
 
-      - name: Rewrite app build.gradle.kts
+      # -------------------------------
+      # FORCE APP MODULE
+      # -------------------------------
+      - name: Ensure app module
         run: |
-          mkdir -p "$ROOT_DIR/app"
-          cat > "$ROOT_DIR/app/build.gradle.kts" <<'EOF'
-          plugins {
-              id("com.android.application")
-              id("org.jetbrains.kotlin.android")
-          }
+          mkdir -p "$ROOT_DIR/app/src/main/java/com/channelsdebrid/tv"
+          mkdir -p "$ROOT_DIR/app/src/main/res/layout"
+
+      # -------------------------------
+      # FORCE APP BUILD FILE
+      # -------------------------------
+      - name: Rewrite app build.gradle
+        run: |
+          cat > "$ROOT_DIR/app/build.gradle" <<'EOF'
+          apply plugin: 'com.android.application'
+          apply plugin: 'kotlin-android'
 
           android {
-              namespace = "com.channelsdebrid.tv"
-              compileSdk = 35
+              namespace "com.channelsdebrid.tv"
+              compileSdk 35
 
               defaultConfig {
-                  applicationId = "com.channelsdebrid.tv"
-                  minSdk = 26
-                  targetSdk = 35
-                  versionCode = 1
-                  versionName = "1.0"
+                  applicationId "com.channelsdebrid.tv"
+                  minSdk 26
+                  targetSdk 35
+                  versionCode 1
+                  versionName "1.0"
               }
 
               buildTypes {
                   release {
-                      isMinifyEnabled = false
+                      minifyEnabled false
                   }
                   debug {
-                      isMinifyEnabled = false
+                      minifyEnabled false
                   }
               }
 
               compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
               }
 
               kotlinOptions {
@@ -109,411 +153,90 @@ jobs:
               }
 
               buildFeatures {
-                  viewBinding = true
+                  viewBinding true
               }
           }
 
           dependencies {
-              implementation("androidx.core:core-ktx:1.13.1")
-              implementation("androidx.appcompat:appcompat:1.7.0")
-              implementation("androidx.activity:activity-ktx:1.9.2")
-              implementation("androidx.leanback:leanback:1.2.0")
-              implementation("androidx.webkit:webkit:1.11.0")
-              implementation("androidx.media3:media3-exoplayer:1.4.1")
-              implementation("androidx.media3:media3-ui:1.4.1")
-              implementation("androidx.media3:media3-common:1.4.1")
+              implementation "androidx.core:core-ktx:1.13.1"
+              implementation "androidx.appcompat:appcompat:1.7.0"
+              implementation "androidx.leanback:leanback:1.2.0"
+              implementation "androidx.media3:media3-exoplayer:1.4.1"
+              implementation "androidx.media3:media3-ui:1.4.1"
           }
           EOF
 
+      # -------------------------------
+      # GRADLE PROPERTIES
+      # -------------------------------
       - name: Write gradle.properties
         run: |
           cat > "$ROOT_DIR/gradle.properties" <<'EOF'
           android.useAndroidX=true
           android.enableJetifier=true
-          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
-          kotlin.code.style=official
+          org.gradle.jvmargs=-Xmx4096m
           EOF
 
-      - name: Rewrite AndroidManifest.xml
-        run: |
-          mkdir -p "$ROOT_DIR/app/src/main"
-          cat > "$ROOT_DIR/app/src/main/AndroidManifest.xml" <<'EOF'
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-              <uses-permission android:name="android.permission.INTERNET" />
-
-              <application
-                  android:allowBackup="true"
-                  android:label="ChannelsDebrid TV"
-                  android:supportsRtl="true"
-                  android:usesCleartextTraffic="true"
-                  android:theme="@style/Theme.ChannelsDebridTV">
-
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:screenOrientation="landscape">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-
-                  <activity
-                      android:name=".HomeActivity"
-                      android:exported="true"
-                      android:screenOrientation="landscape" />
-
-                  <activity
-                      android:name=".PlayerActivity"
-                      android:exported="false"
-                      android:screenOrientation="landscape" />
-
-                  <activity
-                      android:name=".AppsActivity"
-                      android:exported="false"
-                      android:screenOrientation="landscape" />
-
-                  <activity
-                      android:name=".ServerSetupActivity"
-                      android:exported="false"
-                      android:screenOrientation="landscape" />
-
-                  <activity
-                      android:name=".SettingsActivity"
-                      android:exported="false"
-                      android:screenOrientation="landscape" />
-              </application>
-          </manifest>
-          EOF
-
-      - name: Rewrite activity_server_setup.xml
-        run: |
-          mkdir -p "$ROOT_DIR/app/src/main/res/layout"
-          cat > "$ROOT_DIR/app/src/main/res/layout/activity_server_setup.xml" <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-              android:layout_width="match_parent"
-              android:layout_height="match_parent">
-
-              <LinearLayout
-                  android:layout_width="match_parent"
-                  android:layout_height="wrap_content"
-                  android:orientation="vertical"
-                  android:padding="24dp">
-
-                  <EditText
-                      android:id="@+id/backendUrlInput"
-                      android:layout_width="match_parent"
-                      android:layout_height="wrap_content"
-                      android:hint="http://192.168.100.55:8418/app" />
-
-                  <Button
-                      android:id="@+id/testServerBtn"
-                      android:layout_width="wrap_content"
-                      android:layout_height="wrap_content"
-                      android:text="Test" />
-
-                  <Button
-                      android:id="@+id/autoDetectBtn"
-                      android:layout_width="wrap_content"
-                      android:layout_height="wrap_content"
-                      android:text="Auto Detect" />
-
-                  <Button
-                      android:id="@+id/saveServerBtn"
-                      android:layout_width="wrap_content"
-                      android:layout_height="wrap_content"
-                      android:text="Save &amp; Open" />
-
-                  <TextView
-                      android:id="@+id/serverStatus"
-                      android:layout_width="wrap_content"
-                      android:layout_height="wrap_content"
-                      android:text="No server selected yet." />
-              </LinearLayout>
-          </ScrollView>
-          EOF
-
-      - name: Rewrite AppsActivity.kt
-        run: |
-          mkdir -p "$ROOT_DIR/app/src/main/java/com/channelsdebrid/tv"
-          cat > "$ROOT_DIR/app/src/main/java/com/channelsdebrid/tv/AppsActivity.kt" <<'EOF'
-          package com.channelsdebrid.tv
-
-          import android.content.Intent
-          import android.content.pm.PackageManager
-          import android.graphics.Color
-          import android.graphics.drawable.ColorDrawable
-          import android.graphics.drawable.Drawable
-          import android.os.Bundle
-          import android.util.TypedValue
-          import android.view.Gravity
-          import android.view.View
-          import android.view.ViewGroup
-          import android.widget.AbsListView
-          import android.widget.BaseAdapter
-          import android.widget.GridView
-          import android.widget.ImageView
-          import android.widget.LinearLayout
-          import android.widget.TextView
-          import androidx.appcompat.app.AppCompatActivity
-
-          class AppsActivity : AppCompatActivity() {
-
-              data class AppEntry(
-                  val label: String,
-                  val packageName: String,
-                  val activityName: String,
-                  val icon: Drawable?
-              )
-
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState)
-
-                  val pm = packageManager
-                  val intent = Intent(Intent.ACTION_MAIN, null).apply {
-                      addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-                  }
-
-                  val apps = pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)
-                      .map {
-                          AppEntry(
-                              label = it.loadLabel(pm).toString(),
-                              packageName = it.activityInfo.packageName,
-                              activityName = it.activityInfo.name,
-                              icon = it.loadIcon(pm)
-                          )
-                      }
-                      .sortedBy { it.label.lowercase() }
-
-                  val grid = GridView(this).apply {
-                      numColumns = 4
-                      horizontalSpacing = dp(18)
-                      verticalSpacing = dp(18)
-                      stretchMode = GridView.STRETCH_COLUMN_WIDTH
-                      clipToPadding = false
-                      setPadding(dp(28), dp(28), dp(28), dp(28))
-                      setBackgroundColor(Color.parseColor("#05070C"))
-                      selector = ColorDrawable(Color.TRANSPARENT)
-                      adapter = AppsAdapter(apps)
-                  }
-
-                  grid.setOnItemClickListener { _, _, position, _ ->
-                      val app = apps[position]
-                      val launch = Intent(Intent.ACTION_MAIN).apply {
-                          addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-                          setClassName(app.packageName, app.activityName)
-                          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                      }
-                      startActivity(launch)
-                  }
-
-                  setContentView(grid)
-              }
-
-              private fun dp(value: Int): Int {
-                  return TypedValue.applyDimension(
-                      TypedValue.COMPLEX_UNIT_DIP,
-                      value.toFloat(),
-                      resources.displayMetrics
-                  ).toInt()
-              }
-
-              inner class AppsAdapter(private val items: List<AppEntry>) : BaseAdapter() {
-                  override fun getCount(): Int = items.size
-                  override fun getItem(position: Int): Any = items[position]
-                  override fun getItemId(position: Int): Long = position.toLong()
-
-                  override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
-                      val context = this@AppsActivity
-                      val entry = items[position]
-
-                      val root = (convertView as? LinearLayout) ?: LinearLayout(context).apply {
-                          orientation = LinearLayout.VERTICAL
-                          gravity = Gravity.CENTER_HORIZONTAL
-                          setPadding(dp(14), dp(14), dp(14), dp(14))
-                          setBackgroundColor(Color.parseColor("#141923"))
-                          layoutParams = AbsListView.LayoutParams(
-                              ViewGroup.LayoutParams.MATCH_PARENT,
-                              dp(210)
-                          )
-                      }
-
-                      root.removeAllViews()
-
-                      val iconView = ImageView(context).apply {
-                          layoutParams = LinearLayout.LayoutParams(dp(84), dp(84))
-                          setImageDrawable(entry.icon)
-                      }
-
-                      val labelView = TextView(context).apply {
-                          text = entry.label
-                          setTextColor(Color.WHITE)
-                          setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                          gravity = Gravity.CENTER
-                          maxLines = 2
-                          setPadding(0, dp(12), 0, 0)
-                      }
-
-                      root.addView(iconView)
-                      root.addView(labelView)
-
-                      return root
-                  }
-              }
-          }
-          EOF
-
-      - name: Rewrite PlayerActivity.kt
-        run: |
-          mkdir -p "$ROOT_DIR/app/src/main/java/com/channelsdebrid/tv"
-          cat > "$ROOT_DIR/app/src/main/java/com/channelsdebrid/tv/PlayerActivity.kt" <<'EOF'
-          package com.channelsdebrid.tv
-
-          import android.net.Uri
-          import android.os.Bundle
-          import android.view.KeyEvent
-          import android.view.View
-          import android.widget.TextView
-          import androidx.appcompat.app.AppCompatActivity
-          import androidx.media3.common.MediaItem
-          import androidx.media3.common.PlaybackException
-          import androidx.media3.common.Player
-          import androidx.media3.exoplayer.ExoPlayer
-          import androidx.media3.ui.PlayerView
-
-          class PlayerActivity : AppCompatActivity() {
-
-              private var player: ExoPlayer? = null
-              private lateinit var playerView: PlayerView
-              private lateinit var titleText: TextView
-              private lateinit var metaText: TextView
-              private lateinit var controlsHint: TextView
-              private lateinit var trackHint: TextView
-
-              private var resumeMs: Long = 0L
-              private var hintVisible = true
-
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState)
-                  setContentView(R.layout.activity_player)
-
-                  playerView = findViewById(R.id.playerView)
-                  titleText = findViewById(R.id.titleText)
-                  metaText = findViewById(R.id.metaText)
-                  controlsHint = findViewById(R.id.controlsHint)
-                  trackHint = findViewById(R.id.trackHint)
-
-                  val title = intent.getStringExtra(EXTRA_TITLE) ?: "Native Player"
-                  val url = intent.getStringExtra(EXTRA_URL) ?: ""
-                  val subtitle = intent.getStringExtra(EXTRA_META) ?: "Media3 / ExoPlayer playback"
-                  resumeMs = intent.getLongExtra(EXTRA_RESUME_MS, 0L)
-
-                  titleText.text = title
-                  metaText.text = subtitle
-                  controlsHint.text = "DPAD center: play/pause • Left/Right: seek 10s • Up/Down: show controls"
-                  trackHint.text = "Audio: unknown • Subtitles: unknown"
-
-                  if (url.isNotBlank()) {
-                      initializePlayer(url, title)
-                  } else {
-                      metaText.text = "No playback URL supplied. Launch PlayerActivity with EXTRA_URL."
-                  }
-              }
-
-              private fun initializePlayer(url: String, title: String) {
-                  val exoPlayer = ExoPlayer.Builder(this).build()
-                  player = exoPlayer
-                  playerView.player = exoPlayer
-
-                  val mediaItem = MediaItem.Builder()
-                      .setUri(Uri.parse(url))
-                      .setMediaId(title)
-                      .build()
-
-                  exoPlayer.addListener(object : Player.Listener {
-                      override fun onPlaybackStateChanged(playbackState: Int) {
-                          metaText.text = when (playbackState) {
-                              Player.STATE_BUFFERING -> "Buffering…"
-                              Player.STATE_READY -> if (resumeMs > 0L) {
-                                  "Playing in native Media3 player • resumed"
-                              } else {
-                                  "Playing in native Media3 player"
-                              }
-                              Player.STATE_ENDED -> "Playback ended"
-                              else -> metaText.text
-                          }
-                      }
-
-                      override fun onPlayerError(error: PlaybackException) {
-                          metaText.text = "Playback error: ${error.errorCodeName}"
-                      }
-                  })
-
-                  exoPlayer.setMediaItem(mediaItem)
-                  exoPlayer.prepare()
-                  if (resumeMs > 0L) exoPlayer.seekTo(resumeMs)
-                  exoPlayer.playWhenReady = true
-              }
-
-              private fun toggleOverlay(forceShow: Boolean? = null) {
-                  hintVisible = forceShow ?: !hintVisible
-                  val visibility = if (hintVisible) View.VISIBLE else View.GONE
-                  findViewById<View>(R.id.debugOverlay).visibility = visibility
-              }
-
-              override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-                  val p = player ?: return super.onKeyDown(keyCode, event)
-                  when (keyCode) {
-                      KeyEvent.KEYCODE_DPAD_CENTER,
-                      KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                          if (p.isPlaying) p.pause() else p.play()
-                          return true
-                      }
-                      KeyEvent.KEYCODE_DPAD_LEFT -> {
-                          p.seekTo((p.currentPosition - 10_000).coerceAtLeast(0))
-                          return true
-                      }
-                      KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                          p.seekTo(p.currentPosition + 10_000)
-                          return true
-                      }
-                      KeyEvent.KEYCODE_DPAD_UP,
-                      KeyEvent.KEYCODE_DPAD_DOWN -> {
-                          toggleOverlay()
-                          return true
-                      }
-                  }
-                  return super.onKeyDown(keyCode, event)
-              }
-
-              override fun onStart() {
-                  super.onStart()
-                  player?.playWhenReady = true
-              }
-
-              override fun onStop() {
-                  player?.playWhenReady = false
-                  super.onStop()
-              }
-
-              override fun onDestroy() {
-                  playerView.player = null
-                  player?.release()
-                  player = null
-                  super.onDestroy()
-              }
-
-              companion object {
-                  const val EXTRA_URL = "extra_url"
-                  const val EXTRA_TITLE = "extra_title"
-                  const val EXTRA_META = "extra_meta"
-                  const val EXTRA_RESUME_MS = "extra_resume_ms"
-              }
-          }
-          EOF
-
+      # -------------------------------
+      # INSTALL GRADLE
+      # -------------------------------
       - name: Install Gradle
         run: |
-       
+          sudo apt-get update
+          sudo apt-get install -y gradle
+
+      # -------------------------------
+      # SETUP WRAPPER
+      # -------------------------------
+      - name: Setup Gradle wrapper
+        run: |
+          cd "$ROOT_DIR"
+          gradle wrapper --gradle-version 8.10.2
+          chmod +x ./gradlew
+
+      # -------------------------------
+      # DEBUG STRUCTURE
+      # -------------------------------
+      - name: Show project structure
+        run: |
+          ls -R "$ROOT_DIR"
+
+      # -------------------------------
+      # BUILD APK (FORCED MODULE)
+      # -------------------------------
+      - name: Build APK
+        run: |
+          cd "$ROOT_DIR"
+          ./gradlew :app:assembleDebug --stacktrace --info
+
+      # -------------------------------
+      # FIND APK (STRICT)
+      # -------------------------------
+      - name: Locate APK
+        run: |
+          APK_PATH=$(find "$ROOT_DIR" -type f -path "*/build/outputs/apk/debug/*.apk" | head -n 1)
+
+          if [ -z "$APK_PATH" ]; then
+            echo "❌ APK NOT FOUND"
+            find "$ROOT_DIR"
+            exit 1
+          fi
+
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+
+      # -------------------------------
+      # COPY APK
+      # -------------------------------
+      - name: Copy APK
+        run: |
+          cp "$APK_PATH" app-debug.apk
+          ls -lh app-debug.apk
+
+      # -------------------------------
+      # UPLOAD APK
+      # -------------------------------
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: channelsdebrid-tv-apk
+          path: app-debug.apk
