@@ -32,6 +32,69 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
+      - name: Rewrite AndroidManifest.xml
+        run: |
+          cat > "$ROOT_DIR/app/src/main/AndroidManifest.xml" <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.channelsdebrid.tv">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="ChannelsDebrid TV"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.ChannelsDebridTV">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:screenOrientation="landscape">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <activity
+                      android:name=".HomeActivity"
+                      android:exported="true"
+                      android:screenOrientation="landscape" />
+
+                  <activity
+                      android:name=".PlayerActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
+
+                  <activity
+                      android:name=".AppsActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
+
+                  <activity
+                      android:name=".ServerSetupActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
+
+                  <activity
+                      android:name=".SettingsActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
+
+                  <receiver
+                      android:name=".BootReceiver"
+                      android:enabled="true"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.BOOT_COMPLETED" />
+                      </intent-filter>
+                  </receiver>
+
+              </application>
+          </manifest>
+          EOF
+
       - name: Rewrite settings.gradle.kts
         run: |
           cat > "$ROOT_DIR/settings.gradle.kts" <<'EOF'
@@ -449,24 +512,4 @@ jobs:
           cat > gradle/wrapper/gradle-wrapper.properties <<'EOF'
           distributionBase=GRADLE_USER_HOME
           distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-8.7-bin.zip
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          EOF
-
-      - name: Build APK
-        run: |
-          cd "$ROOT_DIR"
-          ./gradlew assembleDebug --stacktrace
-
-      - name: Find APK
-        if: always()
-        run: |
-          find project -name "*.apk" | sort || true
-
-      - name: Upload APK
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: channelsdebrid-tv-apk
-          path: project/**/*.apk
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.7-bin
