@@ -1,4 +1,4 @@
-name: Build Android TV APK (FINAL FIX - GROOVY SAFE)
+name: Build Android TV APK (FINAL STABLE BUILD)
 
 on:
   workflow_dispatch:
@@ -23,7 +23,7 @@ jobs:
           unzip -o channelsdebrid-final-merged-github-apk-v52-backend-setup-fresh.zip -d project
 
       # -------------------------
-      # FIND PROJECT ROOT
+      # FIND PROJECT
       # -------------------------
       - name: Locate Android project
         run: |
@@ -53,7 +53,7 @@ jobs:
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       # -------------------------
-      # 🔥 FIX settings.gradle (GROOVY ONLY)
+      # FIX settings.gradle
       # -------------------------
       - name: Rewrite settings.gradle
         run: |
@@ -63,7 +63,7 @@ jobs:
           EOF
 
       # -------------------------
-      # 🔥 FIX root build.gradle
+      # FIX root build.gradle
       # -------------------------
       - name: Rewrite root build.gradle
         run: |
@@ -88,15 +88,15 @@ jobs:
           EOF
 
       # -------------------------
-      # 🔥 FORCE APP MODULE
+      # FIX app module
       # -------------------------
-      - name: Create app module
+      - name: Ensure app module
         run: |
           mkdir -p "$ROOT_DIR/app/src/main/java/com/channelsdebrid/tv"
           mkdir -p "$ROOT_DIR/app/src/main/res/layout"
 
       # -------------------------
-      # 🔥 FIX app build.gradle
+      # FIX app build.gradle
       # -------------------------
       - name: Rewrite app build.gradle
         run: |
@@ -164,23 +164,16 @@ jobs:
           sudo apt-get install -y gradle
 
       # -------------------------
-      # WRAPPER
+      # FIX WRAPPER (CRITICAL)
       # -------------------------
-      - name: Setup wrapper
+      - name: Setup wrapper (CORRECT VERSION)
         run: |
           cd "$ROOT_DIR"
-          gradle wrapper --gradle-version 8.10.2
+          gradle wrapper --gradle-version 8.7
           chmod +x ./gradlew
 
       # -------------------------
-      # DEBUG STRUCTURE
-      # -------------------------
-      - name: Debug structure
-        run: |
-          ls -R "$ROOT_DIR"
-
-      # -------------------------
-      # BUILD
+      # BUILD APK
       # -------------------------
       - name: Build APK
         run: |
@@ -202,14 +195,14 @@ jobs:
           echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
 
       # -------------------------
-      # COPY
+      # COPY APK
       # -------------------------
       - name: Copy APK
         run: |
           cp "$APK_PATH" app-debug.apk
 
       # -------------------------
-      # UPLOAD
+      # UPLOAD APK
       # -------------------------
       - name: Upload APK
         uses: actions/upload-artifact@v4
