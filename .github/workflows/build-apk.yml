@@ -1,4 +1,4 @@
-name: Build Android TV APK (FULL FIXED)
+name: Build Android TV APK (FINAL FIX - GROOVY SAFE)
 
 on:
   workflow_dispatch:
@@ -8,46 +8,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # -------------------------------
+      # -------------------------
       # CHECKOUT
-      # -------------------------------
-      - name: Checkout repo
+      # -------------------------
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # -------------------------------
+      # -------------------------
       # UNZIP PROJECT
-      # -------------------------------
+      # -------------------------
       - name: Extract ZIP
         run: |
           mkdir -p project
           unzip -o channelsdebrid-final-merged-github-apk-v52-backend-setup-fresh.zip -d project
 
-      # -------------------------------
-      # LOCATE ANDROID PROJECT
-      # -------------------------------
-      - name: Locate Android root
+      # -------------------------
+      # FIND PROJECT ROOT
+      # -------------------------
+      - name: Locate Android project
         run: |
           ROOT_DIR=$(find project -type d -name "android-tv-client" | head -n 1)
           echo "ROOT_DIR=$ROOT_DIR"
-          if [ -z "$ROOT_DIR" ]; then
-            echo "❌ android-tv-client not found"
-            exit 1
-          fi
+          test -n "$ROOT_DIR"
           echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
 
-      # -------------------------------
+      # -------------------------
       # JAVA
-      # -------------------------------
-      - name: Setup Java 17
+      # -------------------------
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      # -------------------------------
+      # -------------------------
       # ANDROID SDK
-      # -------------------------------
-      - name: Setup Android SDK
+      # -------------------------
+      - name: Setup Android
         uses: android-actions/setup-android@v3
 
       - name: Install SDK 35
@@ -55,34 +52,19 @@ jobs:
           yes | sdkmanager --licenses || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      # -------------------------------
-      # FORCE GRADLE SETTINGS
-      # -------------------------------
+      # -------------------------
+      # 🔥 FIX settings.gradle (GROOVY ONLY)
+      # -------------------------
       - name: Rewrite settings.gradle
         run: |
           cat > "$ROOT_DIR/settings.gradle" <<'EOF'
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-
-          dependencyResolutionManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-
           rootProject.name = "ChannelsDebridTV"
           include ':app'
           EOF
 
-      # -------------------------------
-      # FORCE ROOT BUILD FILE
-      # -------------------------------
+      # -------------------------
+      # 🔥 FIX root build.gradle
+      # -------------------------
       - name: Rewrite root build.gradle
         run: |
           cat > "$ROOT_DIR/build.gradle" <<'EOF'
@@ -105,17 +87,17 @@ jobs:
           }
           EOF
 
-      # -------------------------------
-      # FORCE APP MODULE
-      # -------------------------------
-      - name: Ensure app module
+      # -------------------------
+      # 🔥 FORCE APP MODULE
+      # -------------------------
+      - name: Create app module
         run: |
           mkdir -p "$ROOT_DIR/app/src/main/java/com/channelsdebrid/tv"
           mkdir -p "$ROOT_DIR/app/src/main/res/layout"
 
-      # -------------------------------
-      # FORCE APP BUILD FILE
-      # -------------------------------
+      # -------------------------
+      # 🔥 FIX app build.gradle
+      # -------------------------
       - name: Rewrite app build.gradle
         run: |
           cat > "$ROOT_DIR/app/build.gradle" <<'EOF'
@@ -135,12 +117,8 @@ jobs:
               }
 
               buildTypes {
-                  release {
-                      minifyEnabled false
-                  }
-                  debug {
-                      minifyEnabled false
-                  }
+                  release { minifyEnabled false }
+                  debug { minifyEnabled false }
               }
 
               compileOptions {
@@ -166,9 +144,9 @@ jobs:
           }
           EOF
 
-      # -------------------------------
+      # -------------------------
       # GRADLE PROPERTIES
-      # -------------------------------
+      # -------------------------
       - name: Write gradle.properties
         run: |
           cat > "$ROOT_DIR/gradle.properties" <<'EOF'
@@ -177,64 +155,62 @@ jobs:
           org.gradle.jvmargs=-Xmx4096m
           EOF
 
-      # -------------------------------
+      # -------------------------
       # INSTALL GRADLE
-      # -------------------------------
+      # -------------------------
       - name: Install Gradle
         run: |
           sudo apt-get update
           sudo apt-get install -y gradle
 
-      # -------------------------------
-      # SETUP WRAPPER
-      # -------------------------------
-      - name: Setup Gradle wrapper
+      # -------------------------
+      # WRAPPER
+      # -------------------------
+      - name: Setup wrapper
         run: |
           cd "$ROOT_DIR"
           gradle wrapper --gradle-version 8.10.2
           chmod +x ./gradlew
 
-      # -------------------------------
+      # -------------------------
       # DEBUG STRUCTURE
-      # -------------------------------
-      - name: Show project structure
+      # -------------------------
+      - name: Debug structure
         run: |
           ls -R "$ROOT_DIR"
 
-      # -------------------------------
-      # BUILD APK (FORCED MODULE)
-      # -------------------------------
+      # -------------------------
+      # BUILD
+      # -------------------------
       - name: Build APK
         run: |
           cd "$ROOT_DIR"
-          ./gradlew :app:assembleDebug --stacktrace --info
+          ./gradlew :app:assembleDebug --stacktrace
 
-      # -------------------------------
-      # FIND APK (STRICT)
-      # -------------------------------
+      # -------------------------
+      # FIND APK
+      # -------------------------
       - name: Locate APK
         run: |
           APK_PATH=$(find "$ROOT_DIR" -type f -path "*/build/outputs/apk/debug/*.apk" | head -n 1)
 
           if [ -z "$APK_PATH" ]; then
             echo "❌ APK NOT FOUND"
-            find "$ROOT_DIR"
             exit 1
           fi
 
           echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
 
-      # -------------------------------
-      # COPY APK
-      # -------------------------------
+      # -------------------------
+      # COPY
+      # -------------------------
       - name: Copy APK
         run: |
           cp "$APK_PATH" app-debug.apk
-          ls -lh app-debug.apk
 
-      # -------------------------------
-      # UPLOAD APK
-      # -------------------------------
+      # -------------------------
+      # UPLOAD
+      # -------------------------
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
