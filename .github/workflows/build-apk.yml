@@ -19,10 +19,7 @@ jobs:
         run: |
           ROOT_DIR=$(find project -type d -name "android-tv-client" | head -n 1)
           echo "ROOT_DIR=$ROOT_DIR"
-          if [ -z "$ROOT_DIR" ]; then
-            echo "android-tv-client not found"
-            exit 1
-          fi
+          if [ -z "$ROOT_DIR" ]; then exit 1; fi
           echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
 
       - uses: actions/setup-java@v4
@@ -32,59 +29,29 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      # ✅ FIXED MANIFEST (CRASH FIX)
-      - name: Rewrite AndroidManifest.xml
+      # ✅ FIX MANIFEST
+      - name: Fix Manifest
         run: |
-          cat > "$ROOT_DIR/app/src/main/AndroidManifest.xml" <<'EOF'
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              package="com.channelsdebrid.tv">
+          sed -i 's/package="com.channelsdebrid.tv"//g' "$ROOT_DIR/app/src/main/AndroidManifest.xml"
+          sed -i 's/com.channelsdebrid.tv.tv./com.channelsdebrid.tv./g' "$ROOT_DIR/app/src/main/AndroidManifest.xml"
 
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+      # ✅ FIX ALL XML (& crash fix)
+      - name: Fix XML ampersands
+        run: |
+          find "$ROOT_DIR" -name "*.xml" -type f -exec sed -i 's/& /&amp; /g' {} +
+          find "$ROOT_DIR" -name "*.xml" -type f -exec sed -i 's/&</&amp;</g' {} +
+          find "$ROOT_DIR" -name "*.xml" -type f -exec sed -i 's/&"/&amp;"/g' {} +
 
-              <application
-                  android:allowBackup="true"
-                  android:label="ChannelsDebrid TV"
-                  android:supportsRtl="true"
-                  android:theme="@style/Theme.ChannelsDebridTV">
-
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:screenOrientation="landscape">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-
-                  <activity android:name=".HomeActivity" android:exported="true"/>
-                  <activity android:name=".PlayerActivity"/>
-                  <activity android:name=".AppsActivity"/>
-                  <activity android:name=".ServerSetupActivity"/>
-                  <activity android:name=".SettingsActivity"/>
-
-              </application>
-          </manifest>
-          EOF
-
-      # ✅ GRADLE FIXES
+      # ✅ FIX GRADLE FILES
       - name: Rewrite settings.gradle.kts
         run: |
           cat > "$ROOT_DIR/settings.gradle.kts" <<'EOF'
           pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
           }
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
+              repositories { google(); mavenCentral() }
           }
           rootProject.name = "ChannelsDebridTV"
           include(":app")
@@ -119,12 +86,6 @@ jobs:
                   versionName = "1.0"
               }
 
-              buildTypes {
-                  release {
-                      isMinifyEnabled = false
-                  }
-              }
-
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
@@ -140,7 +101,6 @@ jobs:
               implementation("androidx.appcompat:appcompat:1.7.0")
               implementation("androidx.activity:activity-ktx:1.9.2")
               implementation("androidx.leanback:leanback:1.2.0")
-              implementation("androidx.webkit:webkit:1.11.0")
               implementation("androidx.media3:media3-exoplayer:1.4.1")
               implementation("androidx.media3:media3-ui:1.4.1")
           }
@@ -148,21 +108,10 @@ jobs:
 
       - name: Write gradle.properties
         run: |
-          cat > "$ROOT_DIR/gradle.properties" <<'EOF'
-          android.useAndroidX=true
-          android.enableJetifier=true
-          org.gradle.jvmargs=-Xmx4096m
-          EOF
+          echo "android.useAndroidX=true" >> "$ROOT_DIR/gradle.properties"
+          echo "android.enableJetifier=true" >> "$ROOT_DIR/gradle.properties"
 
-      # ✅ FIX BAD XML
-      - name: Fix XML
-        run: |
-          sed -i 's/& /&amp; /g' "$ROOT_DIR/app/src/main/res/layout/"*.xml || true
-
-      # ❌ REMOVE BAD SUDO STEP (THIS BROKE YOUR LAST BUILD)
-      # (intentionally removed)
-
-      # ✅ GRADLE WRAPPER SETUP
+      # ✅ GRADLE WRAPPER
       - name: Setup Gradle Wrapper
         run: |
           cd "$ROOT_DIR"
@@ -171,27 +120,25 @@ jobs:
           fi
           chmod +x gradlew
 
-      # ✅ BUILD APK
+      # ✅ BUILD
       - name: Build APK
         run: |
           cd "$ROOT_DIR"
           ./gradlew assembleDebug --stacktrace
 
-      # 🔥 BULLETPROOF APK DETECTION
-      - name: Locate APK
+      # ✅ FIND APK
+      - name: Find APK
         run: |
-          echo "Searching for APK..."
           find . -name "*.apk"
 
-      - name: Copy APK to root
-        run: |
-          APK_PATH=$(find . -name "*.apk" | head -n 1)
-          echo "Found APK at: $APK_PATH"
-          cp "$APK_PATH" app-debug.apk
-
       # ✅ GUARANTEED ARTIFACT
+      - name: Copy APK
+        run: |
+          APK=$(find . -name "*.apk" | head -n 1)
+          cp "$APK" app.apk
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: channelsdebrid-tv-apk
-          path: app-debug.apk
+          path: app.apk
