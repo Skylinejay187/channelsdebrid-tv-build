@@ -168,19 +168,22 @@ jobs:
           cp "$XML_FILE" "$XML_FILE.bak"
 
           python3 - "$XML_FILE" <<'PY'
-import re
-import sys
-from pathlib import Path
+          import re
+          import sys
+          from pathlib import Path
 
-xml_path = Path(sys.argv[1])
-text = xml_path.read_text(encoding="utf-8")
+          xml_path = Path(sys.argv[1])
+          text = xml_path.read_text(encoding="utf-8")
 
-# Replace any raw ampersand that is NOT already part of a valid XML entity.
-text = re.sub(r'&(?!amp;|lt;|gt;|apos;|quot;|#\d+;|#x[0-9A-Fa-f]+;)', '&amp;', text)
+          text = re.sub(
+              r'&(?!amp;|lt;|gt;|apos;|quot;|#\d+;|#x[0-9A-Fa-f]+;)',
+              '&amp;',
+              text
+          )
 
-xml_path.write_text(text, encoding="utf-8")
-print(f"Patched XML: {xml_path}")
-PY
+          xml_path.write_text(text, encoding="utf-8")
+          print(f"Patched XML: {xml_path}")
+          PY
 
           echo "===== XML lines around failure ====="
           nl -ba "$XML_FILE" | sed -n '58,70p'
