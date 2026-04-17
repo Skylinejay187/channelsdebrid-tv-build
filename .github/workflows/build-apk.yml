@@ -30,7 +30,7 @@ jobs:
 
       - name: Locate Android project
         run: |
-          ROOT_DIR="$(find project -type d -name 'android-tv-client' | head -n 1)"
+          ROOT_DIR="$(find project -type d -name android-tv-client | head -n 1)"
           if [ -z "$ROOT_DIR" ]; then
             echo "android-tv-client not found"
             find project -maxdepth 5 -type d | sort
@@ -51,10 +51,7 @@ jobs:
       - name: Install Android SDK packages
         run: |
           yes | sdkmanager --licenses || true
-          sdkmanager \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "platform-tools"
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
 
       - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
@@ -64,7 +61,7 @@ jobs:
       - name: Rewrite settings.gradle
         run: |
           cat > "$ROOT_DIR/settings.gradle" <<'EOF'
-          rootProject.name = "ChannelsDebridTV"
+          rootProject.name = 'ChannelsDebridTV'
           include ':app'
           EOF
 
@@ -77,8 +74,8 @@ jobs:
                   mavenCentral()
               }
               dependencies {
-                  classpath "com.android.tools.build:gradle:8.6.1"
-                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24"
+                  classpath 'com.android.tools.build:gradle:8.6.1'
+                  classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24'
               }
           }
 
@@ -90,28 +87,22 @@ jobs:
           }
           EOF
 
-      - name: Ensure app directories exist
-        run: |
-          mkdir -p "$ROOT_DIR/app/src/main/java/com/channelsdebrid/tv"
-          mkdir -p "$ROOT_DIR/app/src/main/res/layout"
-          mkdir -p "$ROOT_DIR/app/src/main/res/values"
-
       - name: Rewrite app build.gradle
         run: |
           cat > "$ROOT_DIR/app/build.gradle" <<'EOF'
           apply plugin: 'com.android.application'
-          apply plugin: 'kotlin-android'
+          apply plugin: 'org.jetbrains.kotlin.android'
 
           android {
-              namespace "com.channelsdebrid.tv"
+              namespace 'com.channelsdebrid.tv'
               compileSdk 35
 
               defaultConfig {
-                  applicationId "com.channelsdebrid.tv"
+                  applicationId 'com.channelsdebrid.tv'
                   minSdk 26
                   targetSdk 35
                   versionCode 1
-                  versionName "1.0"
+                  versionName '1.0'
               }
 
               buildTypes {
@@ -129,7 +120,7 @@ jobs:
               }
 
               kotlinOptions {
-                  jvmTarget = "17"
+                  jvmTarget = '17'
               }
 
               buildFeatures {
@@ -143,11 +134,11 @@ jobs:
           }
 
           dependencies {
-              implementation "androidx.core:core-ktx:1.13.1"
-              implementation "androidx.appcompat:appcompat:1.7.0"
-              implementation "androidx.leanback:leanback:1.2.0"
-              implementation "androidx.media3:media3-exoplayer:1.4.1"
-              implementation "androidx.media3:media3-ui:1.4.1"
+              implementation 'androidx.core:core-ktx:1.13.1'
+              implementation 'androidx.appcompat:appcompat:1.7.0'
+              implementation 'androidx.leanback:leanback:1.2.0'
+              implementation 'androidx.media3:media3-exoplayer:1.4.1'
+              implementation 'androidx.media3:media3-ui:1.4.1'
           }
           EOF
 
@@ -159,39 +150,19 @@ jobs:
           org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
           EOF
 
-      - name: Fix AndroidManifest package attribute if present
+      - name: Fix AndroidManifest package attribute
         run: |
           MANIFEST="$ROOT_DIR/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
             sed -i 's/ package="com\.channelsdebrid\.tv"//g' "$MANIFEST" || true
           fi
 
-      - name: Fix XML ampersand in activity_server_setup.xml
+      - name: Fix XML ampersand
         run: |
           XML_FILE="$ROOT_DIR/app/src/main/res/layout/activity_server_setup.xml"
           if [ -f "$XML_FILE" ]; then
-            cp "$XML_FILE" "$XML_FILE.bak"
-            python3 - <<'PY'
-from pathlib import Path
-p = Path(r"""$ROOT_DIR/app/src/main/res/layout/activity_server_setup.xml""")
-text = p.read_text(encoding="utf-8")
-text = text.replace("SAVE & OPEN", "SAVE &amp; OPEN")
-p.write_text(text, encoding="utf-8")
-print("Patched:", p)
-PY
-            echo "Relevant lines after patch:"
-            nl -ba "$XML_FILE" | sed -n '58,68p'
-          else
-            echo "XML file not found: $XML_FILE"
-            exit 1
+            sed -i 's/SAVE \& OPEN/SAVE \&amp; OPEN/g' "$XML_FILE" || true
           fi
-
-      - name: Debug project files
-        run: |
-          echo "===== ROOT DIR ====="
-          echo "$ROOT_DIR"
-          echo "===== FILES ====="
-          find "$ROOT_DIR" -maxdepth 4 | sort
 
       - name: Build APK with Gradle 8.7
         run: |
@@ -200,22 +171,15 @@ PY
 
       - name: Find APK
         run: |
-          echo "Searching for APK under $ROOT_DIR"
-          find "$ROOT_DIR" -type f -name "*.apk" | sort || true
-
           APK_PATH="$(find "$ROOT_DIR" -type f -path "*/build/outputs/apk/debug/*.apk" | head -n 1)"
           if [ -z "$APK_PATH" ]; then
             echo "APK not found"
+            find "$ROOT_DIR" -type f -name "*.apk" | sort || true
             exit 1
           fi
-
           echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
-          echo "Found APK at $APK_PATH"
-
-      - name: Copy APK
-        run: |
-          cp "$APK_PATH" "$GITHUB_WORKSPACE/app-debug.apk"
-          ls -lh "$GITHUB_WORKSPACE/app-debug.apk"
+          cp "$APK_PATH" app-debug.apk
+          ls -lh app-debug.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -223,5 +187,3 @@ PY
           name: channelsdebrid-tv-apk
           path: app-debug.apk
           if-no-files-found: error
-          overwrite: true
-          retention-days: 7
