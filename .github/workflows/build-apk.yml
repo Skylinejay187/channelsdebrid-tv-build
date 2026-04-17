@@ -27,8 +27,6 @@ jobs:
           rm -rf project
           mkdir -p project
           unzip -o "$ZIP_NAME" -d project
-          echo "Top-level extracted contents:"
-          find project -maxdepth 3 -type d | sort
 
       - name: Locate Android project
         run: |
@@ -161,12 +159,39 @@ jobs:
           org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
           EOF
 
+      - name: Fix AndroidManifest package attribute if present
+        run: |
+          MANIFEST="$ROOT_DIR/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            sed -i 's/ package="com\.channelsdebrid\.tv"//g' "$MANIFEST" || true
+          fi
+
+      - name: Fix XML ampersand in activity_server_setup.xml
+        run: |
+          XML_FILE="$ROOT_DIR/app/src/main/res/layout/activity_server_setup.xml"
+          if [ -f "$XML_FILE" ]; then
+            cp "$XML_FILE" "$XML_FILE.bak"
+            python3 - <<'PY'
+from pathlib import Path
+p = Path(r"""$ROOT_DIR/app/src/main/res/layout/activity_server_setup.xml""")
+text = p.read_text(encoding="utf-8")
+text = text.replace("SAVE & OPEN", "SAVE &amp; OPEN")
+p.write_text(text, encoding="utf-8")
+print("Patched:", p)
+PY
+            echo "Relevant lines after patch:"
+            nl -ba "$XML_FILE" | sed -n '58,68p'
+          else
+            echo "XML file not found: $XML_FILE"
+            exit 1
+          fi
+
       - name: Debug project files
         run: |
           echo "===== ROOT DIR ====="
           echo "$ROOT_DIR"
           echo "===== FILES ====="
-          find "$ROOT_DIR" -maxdepth 3 | sort
+          find "$ROOT_DIR" -maxdepth 4 | sort
 
       - name: Build APK with Gradle 8.7
         run: |
