@@ -19,10 +19,13 @@ jobs:
         run: |
           ROOT_DIR=$(find project -type d -name "android-tv-client" | head -n 1)
           echo "ROOT_DIR=$ROOT_DIR"
+          if [ -z "$ROOT_DIR" ]; then
+            echo "android-tv-client not found"
+            exit 1
+          fi
           echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
 
-      # ✅ Fix repositories
-      - name: Fix settings.gradle.kts
+      - name: Rewrite settings.gradle.kts
         run: |
           cat > "$ROOT_DIR/settings.gradle.kts" <<'EOF'
           pluginManagement {
@@ -45,40 +48,83 @@ jobs:
           include(":app")
           EOF
 
-      # ✅ Enable AndroidX
-      - name: Fix gradle.properties
+      - name: Rewrite root build.gradle.kts
+        run: |
+          cat > "$ROOT_DIR/build.gradle.kts" <<'EOF'
+          plugins {
+              id("com.android.application") version "8.6.0" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          EOF
+
+      - name: Rewrite app build.gradle.kts
+        run: |
+          cat > "$ROOT_DIR/app/build.gradle.kts" <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "com.channelsdebrid.tv"
+              compileSdk = 35
+
+              defaultConfig {
+                  applicationId = "com.channelsdebrid.tv"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "0.1.0"
+              }
+
+              buildTypes {
+                  release {
+                      isMinifyEnabled = false
+                  }
+              }
+
+              buildFeatures {
+                  viewBinding = true
+              }
+          }
+
+          dependencies {
+              implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.appcompat:appcompat:1.7.0")
+              implementation("androidx.activity:activity-ktx:1.9.2")
+              implementation("androidx.leanback:leanback:1.2.0")
+              implementation("androidx.webkit:webkit:1.11.0")
+              implementation("androidx.media3:media3-exoplayer:1.4.1")
+              implementation("androidx.media3:media3-ui:1.4.1")
+              implementation("androidx.media3:media3-common:1.4.1")
+          }
+          EOF
+
+      - name: Write gradle.properties
         run: |
           cat > "$ROOT_DIR/gradle.properties" <<'EOF'
           android.useAndroidX=true
           android.enableJetifier=true
-          org.gradle.jvmargs=-Xmx4096m
+          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+          kotlin.code.style=official
           EOF
 
-      # ✅ Fix XML crash
       - name: Fix XML ampersand
         run: |
           sed -i 's/Save & Open/Save \&amp; Open/g' "$ROOT_DIR/app/src/main/res/layout/activity_server_setup.xml" || true
 
-      # ✅ Upgrade Android Gradle Plugin
-      - name: Upgrade AGP to 8.6.0
-        run: |
-          sed -i 's/com.android.application.*8.5.2/com.android.application version "8.6.0" apply false/' "$ROOT_DIR/build.gradle.kts" || true
-
-      # ✅ Force compileSdk 35
-      - name: Force compileSdk 35
-        run: |
-          sed -i 's/compileSdk *= *34/compileSdk = 35/g' "$ROOT_DIR/app/build.gradle.kts" || true
-
-      # ✅ Java 17
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # ✅ Android SDK
       - uses: android-actions/setup-android@v3
 
-      # ✅ Ensure Gradle wrapper
+      - name: Install Gradle
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gradle
+
       - name: Setup Gradle Wrapper
         run: |
           cd "$ROOT_DIR"
@@ -86,11 +132,6 @@ jobs:
             gradle wrapper --gradle-version 8.7
           fi
           chmod +x ./gradlew
-
-      # ✅ Force Gradle 8.7
-      - name: Force Gradle 8.7
-        run: |
-          cd "$ROOT_DIR"
           mkdir -p gradle/wrapper
           cat > gradle/wrapper/gradle-wrapper.properties <<'EOF'
           distributionBase=GRADLE_USER_HOME
@@ -100,18 +141,16 @@ jobs:
           zipStorePath=wrapper/dists
           EOF
 
-      # ✅ Build APK
       - name: Build APK
         run: |
           cd "$ROOT_DIR"
           ./gradlew assembleDebug --stacktrace
 
-      # ✅ Show APK
       - name: Find APK
         if: always()
-        run: find project -name "*.apk"
+        run: |
+          find project -name "*.apk" | sort || true
 
-      # ✅ Upload APK
       - name: Upload APK
         if: always()
         uses: actions/upload-artifact@v4
