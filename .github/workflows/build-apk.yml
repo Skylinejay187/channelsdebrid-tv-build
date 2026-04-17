@@ -8,65 +8,82 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout repo
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      # 2. Show repo files (debug)
       - name: Show repo files
         run: |
-          pwd
+          echo "=== ROOT FILES ==="
           ls -la
+          echo "=== ZIP FILES ==="
+          find . -maxdepth 2 -type f -name "*.zip" | sort
 
+      # 3. Unzip your uploaded project
       - name: Unzip source package
         run: |
           mkdir project
-          unzip channelsdebrid-final-merged-github-apk-v52-backend-setup.zip -d project
-          find project -maxdepth 3 -type d | sort
+          unzip channelsdebrid-final-merged-github-apk-v52-backend-setup-fresh.zip -d project
+          echo "=== UNZIPPED STRUCTURE ==="
+          find project -maxdepth 4 -type d | sort
 
-      - name: Detect project root
+      # 4. Detect android-tv-client folder
+      - name: Detect Android project root
         run: |
-          ROOT_DIR=$(find project -maxdepth 4 -type d -name "android-tv-client" | head -n 1)
+          ROOT_DIR=$(find project -type d -name "android-tv-client" | head -n 1)
+          echo "Detected ROOT_DIR=$ROOT_DIR"
+          if [ -z "$ROOT_DIR" ]; then
+            echo "ERROR: android-tv-client folder not found"
+            exit 1
+          fi
           echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
 
-      - name: Set up JDK 17
+      # 5. Setup Java
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
+      # 6. Setup Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      # 7. Install Gradle (fallback if wrapper missing)
       - name: Install Gradle
         run: |
           sudo apt-get update
           sudo apt-get install -y gradle
 
-      - name: Build APK
+      # 8. Ensure gradlew works
+      - name: Prepare Gradle wrapper
         run: |
           cd "$ROOT_DIR"
           if [ ! -f "./gradlew" ]; then
+            echo "No gradlew found, generating wrapper"
             gradle wrapper
           fi
           chmod +x ./gradlew
+
+      # 9. Build APK
+      - name: Build APK
+        run: |
+          cd "$ROOT_DIR"
           ./gradlew assembleDebug
 
-      - name: Upload APK artifact
+      # 10. Debug output (CRITICAL)
+      - name: Show build outputs
+        if: always()
+        run: |
+          echo "=== APK SEARCH ==="
+          find project -type f -name "*.apk" | sort || true
+
+      # 11. Upload APK (FIXED - no ROOT_DIR usage)
+      - name: Upload APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: channelsdebrid-tv-debug-apk
-          path: ${{ env.ROOT_DIR }}/app/build/outputs/apk/debug/*.apk
-      - name: Install Gradle
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gradle
-
-      - name: Build APK
-        run: |
-          cd project/*/app || true
-          gradle assembleDebug || true
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: apk
-          path: "**/*.apk"
+          path: |
+            project/**/*.apk
