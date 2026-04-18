@@ -8,14 +8,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Find ZIP
         run: |
           ZIP_PATH=$(find . -name "*.zip" | head -n 1)
           echo "ZIP_PATH=$ZIP_PATH" >> $GITHUB_ENV
-          echo "Using ZIP: $ZIP_PATH"
 
       - name: Extract ZIP
         run: |
@@ -27,7 +25,6 @@ jobs:
         run: |
           ROOT_DIR=$(find project -name "settings.gradle*" | head -n 1 | xargs dirname)
           echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
-          echo "Project: $ROOT_DIR"
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -35,7 +32,7 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Android SDK
+      - name: Setup Android
         uses: android-actions/setup-android@v3
 
       - name: Install SDK
@@ -48,52 +45,17 @@ jobs:
         with:
           gradle-version: 8.7
 
-      # 🔥 CLEAN EVERYTHING THAT BREAKS BUILDS
-      - name: Clean Gradle configs
-        run: |
-          cd "$ROOT_DIR"
-          rm -f settings.gradle.kts
-          rm -f build.gradle.kts
-          rm -f app/build.gradle.kts
-
-      # 🔥 REWRITE SAFE CONFIG
-      - name: Write working config
+      - name: Fix Gradle config safely
         run: |
           cd "$ROOT_DIR"
 
-          cat > settings.gradle <<EOF
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
+          rm -f settings.gradle.kts build.gradle.kts app/build.gradle.kts
 
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
+          printf "pluginManagement {\n    repositories {\n        google()\n        mavenCentral()\n        gradlePluginPortal()\n    }\n}\n\ndependencyResolutionManagement {\n    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)\n    repositories {\n        google()\n        mavenCentral()\n    }\n}\n\nrootProject.name = \"ChannelsDebridTV\"\ninclude ':app'\n" > settings.gradle
 
-rootProject.name = "ChannelsDebridTV"
-include ':app'
-EOF
+          printf "plugins {\n    id 'com.android.application' version '8.6.1' apply false\n    id 'org.jetbrains.kotlin.android' version '1.9.24' apply false\n}\n" > build.gradle
 
-          cat > build.gradle <<EOF
-plugins {
-    id 'com.android.application' version '8.6.1' apply false
-    id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
-}
-EOF
-
-          cat > gradle.properties <<EOF
-org.gradle.jvmargs=-Xmx4g
-android.useAndroidX=true
-android.enableJetifier=true
-EOF
+          printf "org.gradle.jvmargs=-Xmx4g\nandroid.useAndroidX=true\nandroid.enableJetifier=true\n" > gradle.properties
 
       - name: Ensure wrapper
         run: |
