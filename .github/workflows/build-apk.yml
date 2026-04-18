@@ -22,6 +22,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
       - name: Install unzip
         run: sudo apt-get update && sudo apt-get install -y unzip findutils
 
@@ -30,9 +35,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          TARGET_ZIP="./channels-debrid-v8.11-package.zip"
-
+          TARGET_ZIP="./channels-debrid-v8.12-package.zip"
           if [ -f "$TARGET_ZIP" ]; then
             ZIP_FILE="$TARGET_ZIP"
           elif ls -1t ./*.zip >/dev/null 2>&1; then
@@ -40,12 +43,10 @@ jobs:
           else
             ZIP_FILE="$(find . -type f -name '*.zip' | sort | tail -n 1)"
           fi
-
           if [ -z "${ZIP_FILE}" ] || [ ! -f "${ZIP_FILE}" ]; then
             echo "No ZIP file found in repository."
             exit 1
           fi
-
           echo "Using ZIP: ${ZIP_FILE}"
           echo "zip_file=${ZIP_FILE}" >> "$GITHUB_OUTPUT"
 
@@ -64,9 +65,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           SEARCH_ROOT="${{ steps.extract.outputs.extract_dir }}"
-
           ROOT="$(find "$SEARCH_ROOT" -type f \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) -print0 \
             | xargs -0 -I{} dirname "{}" \
             | while read -r d; do
@@ -75,46 +74,25 @@ jobs:
                 fi
               done \
             | head -n 1)"
-
-          if [ -z "${ROOT}" ]; then
-            ROOT="$(find "$SEARCH_ROOT" -type f -name 'gradlew' -print0 | xargs -0 -I{} dirname "{}" | head -n 1)"
-          fi
-
           if [ -z "${ROOT}" ] || [ ! -d "${ROOT}" ]; then
             echo "Could not find Android Gradle project root inside extracted ZIP."
             find "$SEARCH_ROOT" -maxdepth 4 -type f | sed 's#^#FOUND: #' | head -n 200
             exit 1
           fi
-
           echo "Gradle root: ${ROOT}"
           echo "root=${ROOT}" >> "$GITHUB_OUTPUT"
 
-      - name: Ensure Gradle wrapper exists
+      - name: Build debug APK with Gradle 8.7
         shell: bash
         run: |
           set -euo pipefail
           cd "${{ steps.gradle_root.outputs.root }}"
-
-          if [ ! -f ./gradlew ]; then
-            echo "gradlew not found, generating wrapper"
-            sudo apt-get update
-            sudo apt-get install -y gradle
-            gradle wrapper
-          fi
-
-          chmod +x ./gradlew
-
-      - name: Build debug APK
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "${{ steps.gradle_root.outputs.root }}"
-          ./gradlew assembleDebug --stacktrace
+          gradle assembleDebug --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: channels-debrid-v8.11-debug-apk
+          name: channels-debrid-v8.12-debug-apk
           path: |
             ${{ steps.gradle_root.outputs.root }}/app/build/outputs/apk/debug/*.apk
             ${{ steps.gradle_root.outputs.root }}/**/build/outputs/apk/debug/*.apk
