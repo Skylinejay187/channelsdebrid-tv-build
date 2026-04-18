@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          TARGET_ZIP="./channels-debrid-v8.10-package.zip"
+          TARGET_ZIP="./channels-debrid-v8.11-package.zip"
 
           if [ -f "$TARGET_ZIP" ]; then
             ZIP_FILE="$TARGET_ZIP"
@@ -114,7 +114,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: channels-debrid-v8.10-debug-apk
+          name: channels-debrid-v8.11-debug-apk
           path: |
             ${{ steps.gradle_root.outputs.root }}/app/build/outputs/apk/debug/*.apk
             ${{ steps.gradle_root.outputs.root }}/**/build/outputs/apk/debug/*.apk
