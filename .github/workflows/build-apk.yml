@@ -6,6 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     env:
       ZIP_NAME: channelsdebrid-final-merged-github-apk-v52-backend-setup-fresh.zip
 
@@ -17,6 +18,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           if [ -f "$ZIP_NAME" ]; then
             ZIP_PATH="$ZIP_NAME"
           else
@@ -44,6 +46,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           ROOT_DIR="$(find project -type f \( -name 'settings.gradle.kts' -o -name 'settings.gradle' \) | head -n 1 | xargs dirname)"
 
           if [ -z "${ROOT_DIR:-}" ] || [ ! -d "$ROOT_DIR" ]; then
@@ -76,270 +79,315 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Rewrite settings.gradle
+      - name: Rewrite settings.gradle safely
         shell: bash
         run: |
           set -euo pipefail
           cd "$ROOT_DIR"
 
-          if [ -f "settings.gradle.kts" ]; then
-            cat > settings.gradle.kts <<'EOF'
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
+          python3 - <<'PY'
+          from pathlib import Path
 
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
+          kts = Path("settings.gradle.kts")
+          groovy = Path("settings.gradle")
 
-rootProject.name = "ChannelsDebridTV"
-include(":app")
-EOF
-          else
-            cat > settings.gradle <<'EOF'
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
+          kts_text = """pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
 
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
 
-rootProject.name = "ChannelsDebridTV"
-include ':app'
-EOF
-          fi
+          rootProject.name = "ChannelsDebridTV"
+          include(":app")
+          """
 
-      - name: Rewrite root build.gradle
+          groovy_text = """pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "ChannelsDebridTV"
+          include ':app'
+          """
+
+          if kts.exists():
+              kts.write_text(kts_text, encoding="utf-8")
+              print("Wrote settings.gradle.kts")
+          else:
+              groovy.write_text(groovy_text, encoding="utf-8")
+              print("Wrote settings.gradle")
+          PY
+
+      - name: Rewrite root build.gradle safely
         shell: bash
         run: |
           set -euo pipefail
           cd "$ROOT_DIR"
 
-          if [ -f "build.gradle.kts" ]; then
-            cat > build.gradle.kts <<'EOF'
-plugins {
-    id("com.android.application") version "8.6.1" apply false
-    id("org.jetbrains.kotlin.android") version "1.9.24" apply false
-}
-EOF
-          else
-            cat > build.gradle <<'EOF'
-plugins {
-    id 'com.android.application' version '8.6.1' apply false
-    id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
-}
-EOF
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
 
-      - name: Rewrite app build.gradle
+          kts = Path("build.gradle.kts")
+          groovy = Path("build.gradle")
+
+          kts_text = """plugins {
+              id("com.android.application") version "8.6.1" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          """
+
+          groovy_text = """plugins {
+              id 'com.android.application' version '8.6.1' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
+          }
+          """
+
+          if kts.exists():
+              kts.write_text(kts_text, encoding="utf-8")
+              print("Wrote build.gradle.kts")
+          else:
+              groovy.write_text(groovy_text, encoding="utf-8")
+              print("Wrote build.gradle")
+          PY
+
+      - name: Rewrite app build.gradle safely
         shell: bash
         run: |
           set -euo pipefail
           cd "$ROOT_DIR"
 
-          if [ -f "app/build.gradle.kts" ]; then
-            cat > app/build.gradle.kts <<'EOF'
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-}
+          mkdir -p app
 
-android {
-    namespace = "com.channelsdebrid.tv"
-    compileSdk = 35
+          python3 - <<'PY'
+          from pathlib import Path
 
-    defaultConfig {
-        applicationId = "com.channelsdebrid.tv"
-        minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
-    }
+          kts = Path("app/build.gradle.kts")
+          groovy = Path("app/build.gradle")
 
-    buildTypes {
-        debug {
-            isMinifyEnabled = false
-        }
-        release {
-            isMinifyEnabled = false
-        }
-    }
+          kts_text = """plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
+          android {
+              namespace = "com.channelsdebrid.tv"
+              compileSdk = 35
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+              defaultConfig {
+                  applicationId = "com.channelsdebrid.tv"
+                  minSdk = 26
+                  targetSdk = 35
+                  versionCode = 1
+                  versionName = "0.1.0"
+              }
 
-    buildFeatures {
-        viewBinding = true
-    }
-}
+              buildTypes {
+                  debug {
+                      isMinifyEnabled = false
+                  }
+                  release {
+                      isMinifyEnabled = false
+                  }
+              }
 
-dependencies {
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("androidx.activity:activity-ktx:1.9.2")
-    implementation("androidx.leanback:leanback:1.2.0")
-    implementation("androidx.webkit:webkit:1.11.0")
-    implementation("androidx.media3:media3-exoplayer:1.4.1")
-    implementation("androidx.media3:media3-ui:1.4.1")
-    implementation("androidx.media3:media3-common:1.4.1")
-}
-EOF
-          else
-            cat > app/build.gradle <<'EOF'
-plugins {
-    id 'com.android.application'
-    id 'org.jetbrains.kotlin.android'
-}
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
 
-android {
-    namespace 'com.channelsdebrid.tv'
-    compileSdk 35
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
 
-    defaultConfig {
-        applicationId "com.channelsdebrid.tv"
-        minSdk 26
-        targetSdk 35
-        versionCode 1
-        versionName "0.1.0"
-    }
+              buildFeatures {
+                  viewBinding = true
+              }
+          }
 
-    buildTypes {
-        debug {
-            minifyEnabled false
-        }
-        release {
-            minifyEnabled false
-        }
-    }
+          dependencies {
+              implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.appcompat:appcompat:1.7.0")
+              implementation("androidx.activity:activity-ktx:1.9.2")
+              implementation("androidx.leanback:leanback:1.2.0")
+              implementation("androidx.webkit:webkit:1.11.0")
+              implementation("androidx.media3:media3-exoplayer:1.4.1")
+              implementation("androidx.media3:media3-ui:1.4.1")
+              implementation("androidx.media3:media3-common:1.4.1")
+          }
+          """
 
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-    }
+          groovy_text = """plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
 
-    kotlinOptions {
-        jvmTarget = '17'
-    }
+          android {
+              namespace 'com.channelsdebrid.tv'
+              compileSdk 35
 
-    buildFeatures {
-        viewBinding true
-    }
-}
+              defaultConfig {
+                  applicationId "com.channelsdebrid.tv"
+                  minSdk 26
+                  targetSdk 35
+                  versionCode 1
+                  versionName "0.1.0"
+              }
 
-dependencies {
-    implementation 'androidx.core:core-ktx:1.13.1'
-    implementation 'androidx.appcompat:appcompat:1.7.0'
-    implementation 'androidx.activity:activity-ktx:1.9.2'
-    implementation 'androidx.leanback:leanback:1.2.0'
-    implementation 'androidx.webkit:webkit:1.11.0'
-    implementation 'androidx.media3:media3-exoplayer:1.4.1'
-    implementation 'androidx.media3:media3-ui:1.4.1'
-    implementation 'androidx.media3:media3-common:1.4.1'
-}
-EOF
-          fi
+              buildTypes {
+                  debug {
+                      minifyEnabled false
+                  }
+                  release {
+                      minifyEnabled false
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+
+              buildFeatures {
+                  viewBinding true
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.core:core-ktx:1.13.1'
+              implementation 'androidx.appcompat:appcompat:1.7.0'
+              implementation 'androidx.activity:activity-ktx:1.9.2'
+              implementation 'androidx.leanback:leanback:1.2.0'
+              implementation 'androidx.webkit:webkit:1.11.0'
+              implementation 'androidx.media3:media3-exoplayer:1.4.1'
+              implementation 'androidx.media3:media3-ui:1.4.1'
+              implementation 'androidx.media3:media3-common:1.4.1'
+          }
+          """
+
+          if kts.exists():
+              kts.write_text(kts_text, encoding="utf-8")
+              print("Wrote app/build.gradle.kts")
+          else:
+              groovy.write_text(groovy_text, encoding="utf-8")
+              print("Wrote app/build.gradle")
+          PY
 
       - name: Write gradle.properties
         shell: bash
         run: |
           set -euo pipefail
           cd "$ROOT_DIR"
-          cat > gradle.properties <<'EOF'
-org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8
-android.useAndroidX=true
-android.enableJetifier=true
-kotlin.code.style=official
-EOF
+
+          python3 - <<'PY'
+          from pathlib import Path
+          Path("gradle.properties").write_text(
+              "org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8\n"
+              "android.useAndroidX=true\n"
+              "android.enableJetifier=true\n"
+              "kotlin.code.style=official\n",
+              encoding="utf-8"
+          )
+          print("Wrote gradle.properties")
+          PY
 
       - name: Rewrite AndroidManifest.xml
         shell: bash
         run: |
           set -euo pipefail
           cd "$ROOT_DIR"
+
           mkdir -p app/src/main
 
-          cat > app/src/main/AndroidManifest.xml <<'EOF'
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-feature
-        android:name="android.software.leanback"
-        android:required="true" />
-    <uses-feature
-        android:name="android.hardware.touchscreen"
-        android:required="false" />
+          python3 - <<'PY'
+          from pathlib import Path
 
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+          manifest = """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-feature
+                  android:name="android.software.leanback"
+                  android:required="true" />
+              <uses-feature
+                  android:name="android.hardware.touchscreen"
+                  android:required="false" />
 
-    <application
-        android:allowBackup="true"
-        android:label="ChannelsDebrid TV"
-        android:theme="@style/Theme.ChannelsDebridTV"
-        android:usesCleartextTraffic="true">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:label="ChannelsDebrid TV"
-            android:theme="@style/Theme.ChannelsDebridTV"
-            android:screenOrientation="landscape"
-            android:resizeableActivity="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-            </intent-filter>
-        </activity>
+              <application
+                  android:allowBackup="true"
+                  android:label="ChannelsDebrid TV"
+                  android:theme="@style/Theme.ChannelsDebridTV"
+                  android:usesCleartextTraffic="true">
 
-        <activity
-            android:name=".HomeActivity"
-            android:exported="false"
-            android:screenOrientation="landscape" />
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:label="ChannelsDebrid TV"
+                      android:theme="@style/Theme.ChannelsDebridTV"
+                      android:screenOrientation="landscape"
+                      android:resizeableActivity="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                      </intent-filter>
+                  </activity>
 
-        <activity
-            android:name=".PlayerActivity"
-            android:exported="false"
-            android:launchMode="singleTask"
-            android:screenOrientation="landscape" />
+                  <activity
+                      android:name=".HomeActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
 
-        <activity
-            android:name=".SettingsActivity"
-            android:exported="false"
-            android:screenOrientation="landscape" />
+                  <activity
+                      android:name=".PlayerActivity"
+                      android:exported="false"
+                      android:launchMode="singleTask"
+                      android:screenOrientation="landscape" />
 
-        <activity
-            android:name=".ServerSetupActivity"
-            android:exported="false"
-            android:screenOrientation="landscape" />
+                  <activity
+                      android:name=".SettingsActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
 
-        <activity
-            android:name=".AppsActivity"
-            android:exported="false"
-            android:screenOrientation="landscape" />
-    </application>
-</manifest>
-EOF
+                  <activity
+                      android:name=".ServerSetupActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
+
+                  <activity
+                      android:name=".AppsActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
+              </application>
+          </manifest>
+          """
+
+          Path("app/src/main/AndroidManifest.xml").write_text(manifest, encoding="utf-8")
+          print("Wrote AndroidManifest.xml")
+          PY
 
       - name: Fix activity_server_setup.xml
         shell: bash
@@ -347,149 +395,148 @@ EOF
           set -euo pipefail
           cd "$ROOT_DIR"
 
-          XML_FILE="app/src/main/res/layout/activity_server_setup.xml"
-          if [ -f "$XML_FILE" ]; then
+          if [ -f "app/src/main/res/layout/activity_server_setup.xml" ]; then
             python3 - <<'PY'
-from pathlib import Path
-import re
+          from pathlib import Path
+          import re
 
-p = Path("app/src/main/res/layout/activity_server_setup.xml")
-text = p.read_text(encoding="utf-8")
-text = re.sub(r'&(?!amp;|lt;|gt;|apos;|quot;|#\d+;|#x[0-9A-Fa-f]+;)', '&amp;', text)
-p.write_text(text, encoding="utf-8")
-print("Patched:", p)
-PY
+          p = Path("app/src/main/res/layout/activity_server_setup.xml")
+          text = p.read_text(encoding="utf-8")
+          text = re.sub(r'&(?!amp;|lt;|gt;|apos;|quot;|#\d+;|#x[0-9A-Fa-f]+;)', '&amp;', text)
+          p.write_text(text, encoding="utf-8")
+          print("Patched XML:", p)
+          PY
           else
-            echo "Skipping XML patch; file not found."
+            echo "activity_server_setup.xml not found, skipping."
           fi
 
-      - name: Patch web UI fullscreen and remove side detail card
+      - name: Patch web UI fullscreen and remove selected title dialog
         shell: bash
         run: |
           set -euo pipefail
           cd "$ROOT_DIR"
 
           python3 - <<'PY'
-from pathlib import Path
+          from pathlib import Path
 
-targets = []
-for ext in ("*.html", "*.htm", "*.css", "*.js"):
-    targets.extend(Path(".").rglob(ext))
+          css_patch = """
+          html, body, #app, .app, .shell, .page, main {
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: 100vw !important;
+            max-height: 100vh !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+          }
 
-css_patch = """
-html, body, #app, .app, .shell, .page, main {
-  width: 100vw !important;
-  height: 100vh !important;
-  max-width: 100vw !important;
-  max-height: 100vh !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  overflow: hidden !important;
-}
+          .selected-title-panel,
+          .selectedTitlePanel,
+          .detail-panel,
+          .details-panel,
+          .focus-details,
+          .focus-detail-panel,
+          .side-details,
+          .right-details,
+          .overlay-card,
+          .floating-details,
+          .browse-details,
+          [data-selected-panel],
+          [data-role="selected-panel"] {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+          }
+          """
 
-.selected-title-panel,
-.selectedTitlePanel,
-.detail-panel,
-.details-panel,
-.focus-details,
-.focus-detail-panel,
-.side-details,
-.right-details,
-.overlay-card,
-.floating-details,
-.browse-details,
-[data-selected-panel],
-[data-role="selected-panel"] {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-"""
+          js_patch = """
+          document.addEventListener('DOMContentLoaded', function () {
+            var selectors = [
+              '.selected-title-panel',
+              '.selectedTitlePanel',
+              '.detail-panel',
+              '.details-panel',
+              '.focus-details',
+              '.focus-detail-panel',
+              '.side-details',
+              '.right-details',
+              '.overlay-card',
+              '.floating-details',
+              '.browse-details',
+              '[data-selected-panel]',
+              '[data-role="selected-panel"]'
+            ];
 
-js_patch = """
-document.addEventListener('DOMContentLoaded', function () {
-  var selectors = [
-    '.selected-title-panel',
-    '.selectedTitlePanel',
-    '.detail-panel',
-    '.details-panel',
-    '.focus-details',
-    '.focus-detail-panel',
-    '.side-details',
-    '.right-details',
-    '.overlay-card',
-    '.floating-details',
-    '.browse-details',
-    '[data-selected-panel]',
-    '[data-role="selected-panel"]'
-  ];
+            selectors.forEach(function (sel) {
+              document.querySelectorAll(sel).forEach(function (el) {
+                el.style.display = 'none';
+                el.style.visibility = 'hidden';
+                el.style.opacity = '0';
+                el.style.pointerEvents = 'none';
+              });
+            });
 
-  selectors.forEach(function (sel) {
-    document.querySelectorAll(sel).forEach(function (el) {
-      el.style.display = 'none';
-      el.style.visibility = 'hidden';
-      el.style.opacity = '0';
-      el.style.pointerEvents = 'none';
-    });
-  });
+            document.documentElement.style.width = '100vw';
+            document.documentElement.style.height = '100vh';
+            document.body.style.width = '100vw';
+            document.body.style.height = '100vh';
+            document.body.style.margin = '0';
+            document.body.style.padding = '0';
+            document.body.style.overflow = 'hidden';
+          });
+          """
 
-  document.documentElement.style.width = '100vw';
-  document.documentElement.style.height = '100vh';
-  document.body.style.width = '100vw';
-  document.body.style.height = '100vh';
-  document.body.style.margin = '0';
-  document.body.style.padding = '0';
-  document.body.style.overflow = 'hidden';
-});
-"""
+          targets = []
+          for ext in ("*.html", "*.htm", "*.css", "*.js"):
+              targets.extend(Path(".").rglob(ext))
 
-count = 0
+          patched = 0
 
-for path in targets:
-    try:
-        text = path.read_text(encoding="utf-8", errors="ignore")
-    except Exception:
-        continue
+          for path in targets:
+              try:
+                  text = path.read_text(encoding="utf-8", errors="ignore")
+              except Exception:
+                  continue
 
-    original = text
-    low = text.lower()
+              original = text
+              lower = text.lower()
 
-    if "selected title" in low:
-        text = text.replace("Selected Title", "")
-    if "Browse details here." in text:
-        text = text.replace("Browse details here.", "")
-    if "Browse details here" in text:
-        text = text.replace("Browse details here", "")
+              if "selected title" in lower:
+                  text = text.replace("Selected Title", "")
+              if "Browse details here." in text:
+                  text = text.replace("Browse details here.", "")
+              if "Browse details here" in text:
+                  text = text.replace("Browse details here", "")
 
-    if path.suffix in (".html", ".htm"):
-        if css_patch not in text:
-            if "</head>" in text:
-                text = text.replace("</head>", "<style>\n" + css_patch + "\n</style>\n</head>", 1)
-            else:
-                text = "<style>\n" + css_patch + "\n</style>\n" + text
+              if path.suffix in (".html", ".htm"):
+                  if css_patch not in text:
+                      if "</head>" in text:
+                          text = text.replace("</head>", "<style>\n" + css_patch + "\n</style>\n</head>", 1)
+                      else:
+                          text = "<style>\n" + css_patch + "\n</style>\n" + text
 
-        if js_patch not in text:
-            if "</body>" in text:
-                text = text.replace("</body>", "<script>\n" + js_patch + "\n</script>\n</body>", 1)
-            else:
-                text += "\n<script>\n" + js_patch + "\n</script>\n"
+                  if js_patch not in text:
+                      if "</body>" in text:
+                          text = text.replace("</body>", "<script>\n" + js_patch + "\n</script>\n</body>", 1)
+                      else:
+                          text += "\n<script>\n" + js_patch + "\n</script>\n"
 
-    elif path.suffix == ".css":
-        if css_patch not in text:
-            text += "\n" + css_patch + "\n"
+              elif path.suffix == ".css":
+                  if css_patch not in text:
+                      text += "\n" + css_patch + "\n"
 
-    elif path.suffix == ".js":
-        if js_patch not in text:
-            text += "\n" + js_patch + "\n"
+              elif path.suffix == ".js":
+                  if js_patch not in text:
+                      text += "\n" + js_patch + "\n"
 
-    if text != original:
-        path.write_text(text, encoding="utf-8")
-        print("Patched:", path)
-        count += 1
+              if text != original:
+                  path.write_text(text, encoding="utf-8")
+                  print("Patched:", path)
+                  patched += 1
 
-print("Patched files:", count)
-PY
+          print("Total patched files:", patched)
+          PY
 
       - name: Rewrite MainActivity.kt
         shell: bash
@@ -503,118 +550,114 @@ PY
             exit 1
           fi
 
-          cat > "$MAIN_KT" <<'EOF'
-package com.channelsdebrid.tv
+          python3 - "$MAIN_KT" <<'PY'
+          from pathlib import Path
+          import sys
 
-import android.annotation.SuppressLint
-import android.graphics.Color
-import android.os.Bundle
-import android.view.KeyEvent
-import android.view.ViewGroup
-import android.webkit.WebChromeClient
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
+          path = Path(sys.argv[1])
+          text = """package com.channelsdebrid.tv
 
-class MainActivity : AppCompatActivity() {
+          import android.annotation.SuppressLint
+          import android.graphics.Color
+          import android.os.Bundle
+          import android.view.KeyEvent
+          import android.view.ViewGroup
+          import android.webkit.WebChromeClient
+          import android.webkit.WebSettings
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.core.view.WindowCompat
+          import androidx.core.view.WindowInsetsCompat
+          import androidx.core.view.WindowInsetsControllerCompat
 
-    private lateinit var webView: WebView
+          class MainActivity : AppCompatActivity() {
 
-    @SuppressLint("SetJavaScriptEnabled")
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+              private lateinit var webView: WebView
 
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
+              @SuppressLint("SetJavaScriptEnabled")
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
 
-        val controller = WindowInsetsControllerCompat(window, window.decorView)
-        controller.hide(WindowInsetsCompat.Type.systemBars())
-        controller.systemBarsBehavior =
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                  WindowCompat.setDecorFitsSystemWindows(window, false)
+                  window.statusBarColor = Color.TRANSPARENT
+                  window.navigationBarColor = Color.TRANSPARENT
 
-        webView = WebView(this).apply {
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-            setBackgroundColor(Color.parseColor("#05070C"))
-            isFocusable = true
-            isFocusableInTouchMode = true
-            requestFocus()
+                  val controller = WindowInsetsControllerCompat(window, window.decorView)
+                  controller.hide(WindowInsetsCompat.Type.systemBars())
+                  controller.systemBarsBehavior =
+                      WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.databaseEnabled = true
-            settings.allowFileAccess = true
-            settings.allowContentAccess = true
-            settings.mediaPlaybackRequiresUserGesture = false
-            settings.loadsImagesAutomatically = true
-            settings.useWideViewPort = true
-            settings.loadWithOverviewMode = true
-            settings.cacheMode = WebSettings.LOAD_DEFAULT
-            settings.setSupportZoom(false)
-            settings.builtInZoomControls = false
-            settings.displayZoomControls = false
+                  webView = WebView(this).apply {
+                      layoutParams = ViewGroup.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.MATCH_PARENT
+                      )
+                      setBackgroundColor(Color.parseColor("#05070C"))
+                      isFocusable = true
+                      isFocusableInTouchMode = true
+                      requestFocus()
 
-            webViewClient = WebViewClient()
-            webChromeClient = WebChromeClient()
-        }
+                      settings.javaScriptEnabled = true
+                      settings.domStorageEnabled = true
+                      settings.databaseEnabled = true
+                      settings.allowFileAccess = true
+                      settings.allowContentAccess = true
+                      settings.mediaPlaybackRequiresUserGesture = false
+                      settings.loadsImagesAutomatically = true
+                      settings.useWideViewPort = true
+                      settings.loadWithOverviewMode = true
+                      settings.cacheMode = WebSettings.LOAD_DEFAULT
+                      settings.setSupportZoom(false)
+                      settings.builtInZoomControls = false
+                      settings.displayZoomControls = false
 
-        setContentView(webView)
+                      webViewClient = WebViewClient()
+                      webChromeClient = WebChromeClient()
+                  }
 
-        val launchUrl = intent.getStringExtra("url")
-            ?: "http://192.168.100.55:8418/app"
+                  setContentView(webView)
 
-        webView.loadUrl(launchUrl)
-    }
+                  val launchUrl = intent.getStringExtra("url")
+                      ?: "http://192.168.100.55:8418/app"
 
-    override fun onResume() {
-        super.onResume()
-        val controller = WindowInsetsControllerCompat(window, window.decorView)
-        controller.hide(WindowInsetsCompat.Type.systemBars())
-    }
+                  webView.loadUrl(launchUrl)
+              }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (::webView.isInitialized) {
-            when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_CENTER,
-                KeyEvent.KEYCODE_ENTER,
-                KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                    webView.evaluateJavascript(
-                        """
-                        (function() {
-                          try {
-                            var el = document.activeElement;
-                            if (el && typeof el.click === 'function') {
-                              el.click();
-                              return true;
-                            }
-                          } catch (e) {}
-                          return false;
-                        })();
-                        """.trimIndent(),
-                        null
-                    )
-                    return true
-                }
-            }
-        }
-        return super.onKeyDown(keyCode, event)
-    }
+              override fun onResume() {
+                  super.onResume()
+                  val controller = WindowInsetsControllerCompat(window, window.decorView)
+                  controller.hide(WindowInsetsCompat.Type.systemBars())
+              }
 
-    override fun onDestroy() {
-        if (::webView.isInitialized) {
-            webView.destroy()
-        }
-        super.onDestroy()
-    }
-}
-EOF
+              override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+                  if (::webView.isInitialized) {
+                      when (keyCode) {
+                          KeyEvent.KEYCODE_DPAD_CENTER,
+                          KeyEvent.KEYCODE_ENTER,
+                          KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                              webView.evaluateJavascript(
+                                  "(function(){try{var el=document.activeElement;if(el&&typeof el.click==='function'){el.click();return true;}}catch(e){}return false;})();",
+                                  null
+                              )
+                              return true
+                          }
+                      }
+                  }
+                  return super.onKeyDown(keyCode, event)
+              }
+
+              override fun onDestroy() {
+                  if (::webView.isInitialized) {
+                      webView.destroy()
+                  }
+                  super.onDestroy()
+              }
+          }
+          """
+          path.write_text(text, encoding="utf-8")
+          print(f"Wrote {path}")
+          PY
 
       - name: Rewrite AppsActivity.kt
         shell: bash
@@ -628,146 +671,153 @@ EOF
             exit 0
           fi
 
-          cat > "$APPS_KT" <<'EOF'
-package com.channelsdebrid.tv
+          python3 - "$APPS_KT" <<'PY'
+          from pathlib import Path
+          import sys
 
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
-import android.graphics.drawable.Drawable
-import android.os.Bundle
-import android.util.TypedValue
-import android.view.Gravity
-import android.view.View
-import android.view.ViewGroup
-import android.widget.AbsListView
-import android.widget.BaseAdapter
-import android.widget.GridView
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
+          path = Path(sys.argv[1])
+          text = """package com.channelsdebrid.tv
 
-class AppsActivity : AppCompatActivity() {
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.graphics.Color
+          import android.graphics.drawable.ColorDrawable
+          import android.graphics.drawable.Drawable
+          import android.os.Bundle
+          import android.util.TypedValue
+          import android.view.Gravity
+          import android.view.View
+          import android.view.ViewGroup
+          import android.widget.AbsListView
+          import android.widget.BaseAdapter
+          import android.widget.GridView
+          import android.widget.ImageView
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import androidx.appcompat.app.AppCompatActivity
 
-    data class AppEntry(
-        val label: String,
-        val packageName: String,
-        val activityName: String,
-        val icon: Drawable?
-    )
+          class AppsActivity : AppCompatActivity() {
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+              data class AppEntry(
+                  val label: String,
+                  val packageName: String,
+                  val activityName: String,
+                  val icon: Drawable?
+              )
 
-        val pm = packageManager
-        val intent = Intent(Intent.ACTION_MAIN, null).apply {
-            addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-        }
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
 
-        val apps = pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)
-            .map {
-                AppEntry(
-                    label = it.loadLabel(pm).toString(),
-                    packageName = it.activityInfo.packageName,
-                    activityName = it.activityInfo.name,
-                    icon = it.loadIcon(pm)
-                )
-            }
-            .sortedBy { it.label.lowercase() }
+                  val pm = packageManager
+                  val intent = Intent(Intent.ACTION_MAIN, null).apply {
+                      addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+                  }
 
-        val grid = GridView(this).apply {
-            numColumns = 4
-            horizontalSpacing = dp(18)
-            verticalSpacing = dp(18)
-            stretchMode = GridView.STRETCH_COLUMN_WIDTH
-            clipToPadding = false
-            setPadding(dp(28), dp(28), dp(28), dp(28))
-            setBackgroundColor(Color.parseColor("#05070C"))
-            selector = ColorDrawable(Color.TRANSPARENT)
-            adapter = AppsAdapter(apps)
-            isFocusable = true
-            isFocusableInTouchMode = true
-        }
+                  val apps = pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)
+                      .map {
+                          AppEntry(
+                              label = it.loadLabel(pm).toString(),
+                              packageName = it.activityInfo.packageName,
+                              activityName = it.activityInfo.name,
+                              icon = it.loadIcon(pm)
+                          )
+                      }
+                      .sortedBy { it.label.lowercase() }
 
-        grid.setOnItemClickListener { _, _, position, _ ->
-            val app = apps[position]
-            val launch = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-                setClassName(app.packageName, app.activityName)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(launch)
-        }
+                  val grid = GridView(this).apply {
+                      numColumns = 4
+                      horizontalSpacing = dp(18)
+                      verticalSpacing = dp(18)
+                      stretchMode = GridView.STRETCH_COLUMN_WIDTH
+                      clipToPadding = false
+                      setPadding(dp(28), dp(28), dp(28), dp(28))
+                      setBackgroundColor(Color.parseColor("#05070C"))
+                      selector = ColorDrawable(Color.TRANSPARENT)
+                      adapter = AppsAdapter(apps)
+                      isFocusable = true
+                      isFocusableInTouchMode = true
+                  }
 
-        setContentView(grid)
-    }
+                  grid.setOnItemClickListener { _, _, position, _ ->
+                      val app = apps[position]
+                      val launch = Intent(Intent.ACTION_MAIN).apply {
+                          addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+                          setClassName(app.packageName, app.activityName)
+                          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                      }
+                      startActivity(launch)
+                  }
 
-    private fun dp(value: Int): Int {
-        return TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP,
-            value.toFloat(),
-            resources.displayMetrics
-        ).toInt()
-    }
+                  setContentView(grid)
+              }
 
-    inner class AppsAdapter(private val items: List<AppEntry>) : BaseAdapter() {
-        override fun getCount(): Int = items.size
-        override fun getItem(position: Int): Any = items[position]
-        override fun getItemId(position: Int): Long = position.toLong()
+              private fun dp(value: Int): Int {
+                  return TypedValue.applyDimension(
+                      TypedValue.COMPLEX_UNIT_DIP,
+                      value.toFloat(),
+                      resources.displayMetrics
+                  ).toInt()
+              }
 
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
-            val context = this@AppsActivity
-            val entry = items[position]
+              inner class AppsAdapter(private val items: List<AppEntry>) : BaseAdapter() {
+                  override fun getCount(): Int = items.size
+                  override fun getItem(position: Int): Any = items[position]
+                  override fun getItemId(position: Int): Long = position.toLong()
 
-            val root = if (convertView == null) {
-                LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = Gravity.CENTER_HORIZONTAL
-                    setPadding(dp(14), dp(14), dp(14), dp(14))
-                    setBackgroundColor(Color.parseColor("#141923"))
-                    layoutParams = AbsListView.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        dp(210)
-                    )
-                    isFocusable = true
-                    isClickable = true
-                }
-            } else {
-                convertView as LinearLayout
-            }
+                  override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+                      val context = this@AppsActivity
+                      val entry = items[position]
 
-            root.removeAllViews()
+                      val root = if (convertView == null) {
+                          LinearLayout(context).apply {
+                              orientation = LinearLayout.VERTICAL
+                              gravity = Gravity.CENTER_HORIZONTAL
+                              setPadding(dp(14), dp(14), dp(14), dp(14))
+                              setBackgroundColor(Color.parseColor("#141923"))
+                              layoutParams = AbsListView.LayoutParams(
+                                  ViewGroup.LayoutParams.MATCH_PARENT,
+                                  dp(210)
+                              )
+                              isFocusable = true
+                              isClickable = true
+                          }
+                      } else {
+                          convertView as LinearLayout
+                      }
 
-            val iconView = ImageView(context).apply {
-                layoutParams = LinearLayout.LayoutParams(dp(84), dp(84))
-                setImageDrawable(entry.icon)
-            }
+                      root.removeAllViews()
 
-            val labelView = TextView(context).apply {
-                text = entry.label
-                setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                gravity = Gravity.CENTER
-                maxLines = 2
-                setPadding(0, dp(12), 0, 0)
-            }
+                      val iconView = ImageView(context).apply {
+                          layoutParams = LinearLayout.LayoutParams(dp(84), dp(84))
+                          setImageDrawable(entry.icon)
+                      }
 
-            root.addView(iconView)
-            root.addView(labelView)
+                      val labelView = TextView(context).apply {
+                          text = entry.label
+                          setTextColor(Color.WHITE)
+                          setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                          gravity = Gravity.CENTER
+                          maxLines = 2
+                          setPadding(0, dp(12), 0, 0)
+                      }
 
-            root.setOnFocusChangeListener { view, hasFocus ->
-                view.scaleX = if (hasFocus) 1.06f else 1.0f
-                view.scaleY = if (hasFocus) 1.06f else 1.0f
-                view.alpha = if (hasFocus) 1.0f else 0.96f
-            }
+                      root.addView(iconView)
+                      root.addView(labelView)
 
-            return root
-        }
-    }
-}
-EOF
+                      root.setOnFocusChangeListener { view, hasFocus ->
+                          view.scaleX = if (hasFocus) 1.06f else 1.0f
+                          view.scaleY = if (hasFocus) 1.06f else 1.0f
+                          view.alpha = if (hasFocus) 1.0f else 0.96f
+                      }
+
+                      return root
+                  }
+              }
+          }
+          """
+          path.write_text(text, encoding="utf-8")
+          print(f"Wrote {path}")
+          PY
 
       - name: Rewrite PlayerActivity.kt
         shell: bash
@@ -781,177 +831,186 @@ EOF
             exit 0
           fi
 
-          cat > "$PLAYER_KT" <<'EOF'
-package com.channelsdebrid.tv
+          python3 - "$PLAYER_KT" <<'PY'
+          from pathlib import Path
+          import sys
 
-import android.net.Uri
-import android.os.Bundle
-import android.view.KeyEvent
-import android.view.View
-import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
-import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.common.Tracks
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
+          path = Path(sys.argv[1])
+          text = """package com.channelsdebrid.tv
 
-class PlayerActivity : AppCompatActivity() {
+          import android.net.Uri
+          import android.os.Bundle
+          import android.view.KeyEvent
+          import android.view.View
+          import android.widget.TextView
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.media3.common.C
+          import androidx.media3.common.MediaItem
+          import androidx.media3.common.PlaybackException
+          import androidx.media3.common.Player
+          import androidx.media3.common.Tracks
+          import androidx.media3.exoplayer.ExoPlayer
+          import androidx.media3.ui.PlayerView
 
-    private var player: ExoPlayer? = null
-    private lateinit var playerView: PlayerView
-    private lateinit var titleText: TextView
-    private lateinit var metaText: TextView
-    private lateinit var controlsHint: TextView
-    private lateinit var trackHint: TextView
+          class PlayerActivity : AppCompatActivity() {
 
-    private var resumeMs: Long = 0L
-    private var hintVisible = true
+              private var player: ExoPlayer? = null
+              private lateinit var playerView: PlayerView
+              private lateinit var titleText: TextView
+              private lateinit var metaText: TextView
+              private lateinit var controlsHint: TextView
+              private lateinit var trackHint: TextView
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_player)
+              private var resumeMs: Long = 0L
+              private var hintVisible = true
 
-        playerView = findViewById(R.id.playerView)
-        titleText = findViewById(R.id.titleText)
-        metaText = findViewById(R.id.metaText)
-        controlsHint = findViewById(R.id.controlsHint)
-        trackHint = findViewById(R.id.trackHint)
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_player)
 
-        val title = intent.getStringExtra(EXTRA_TITLE) ?: "Native Player"
-        val url = intent.getStringExtra(EXTRA_URL) ?: ""
-        val subtitle = intent.getStringExtra(EXTRA_META) ?: "Media3 / ExoPlayer playback"
-        resumeMs = intent.getLongExtra(EXTRA_RESUME_MS, 0L)
+                  playerView = findViewById(R.id.playerView)
+                  titleText = findViewById(R.id.titleText)
+                  metaText = findViewById(R.id.metaText)
+                  controlsHint = findViewById(R.id.controlsHint)
+                  trackHint = findViewById(R.id.trackHint)
 
-        titleText.text = title
-        metaText.text = subtitle
-        controlsHint.text = "DPAD center: play/pause • Left/Right: seek 10s • Up/Down: show controls"
-        trackHint.text = "Subtitles/audio selection scaffold ready for next pass"
+                  val title = intent.getStringExtra(EXTRA_TITLE) ?: "Native Player"
+                  val url = intent.getStringExtra(EXTRA_URL) ?: ""
+                  val subtitle = intent.getStringExtra(EXTRA_META) ?: "Media3 / ExoPlayer playback"
+                  resumeMs = intent.getLongExtra(EXTRA_RESUME_MS, 0L)
 
-        if (url.isNotBlank()) {
-            initializePlayer(url, title)
-        } else {
-            metaText.text = "No playback URL supplied. Launch PlayerActivity with EXTRA_URL."
-        }
-    }
+                  titleText.text = title
+                  metaText.text = subtitle
+                  controlsHint.text = "DPAD center: play/pause • Left/Right: seek 10s • Up/Down: show controls"
+                  trackHint.text = "Subtitles/audio selection scaffold ready for next pass"
 
-    private fun initializePlayer(url: String, title: String) {
-        val exoPlayer = ExoPlayer.Builder(this).build()
-        player = exoPlayer
-        playerView.player = exoPlayer
+                  if (url.isNotBlank()) {
+                      initializePlayer(url, title)
+                  } else {
+                      metaText.text = "No playback URL supplied. Launch PlayerActivity with EXTRA_URL."
+                  }
+              }
 
-        val mediaItem = MediaItem.Builder()
-            .setUri(Uri.parse(url))
-            .setMediaId(title)
-            .build()
+              private fun initializePlayer(url: String, title: String) {
+                  val exoPlayer = ExoPlayer.Builder(this).build()
+                  player = exoPlayer
+                  playerView.player = exoPlayer
 
-        exoPlayer.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                metaText.text = when (playbackState) {
-                    Player.STATE_BUFFERING -> "Buffering…"
-                    Player.STATE_READY ->
-                        if (resumeMs > 0L) "Playing in native Media3 player • resumed"
-                        else "Playing in native Media3 player"
-                    Player.STATE_ENDED -> "Playback ended"
-                    else -> metaText.text
-                }
-            }
+                  val mediaItem = MediaItem.Builder()
+                      .setUri(Uri.parse(url))
+                      .setMediaId(title)
+                      .build()
 
-            override fun onPlayerError(error: PlaybackException) {
-                metaText.text = "Playback error: ${error.errorCodeName}"
-            }
+                  exoPlayer.addListener(object : Player.Listener {
+                      override fun onPlaybackStateChanged(playbackState: Int) {
+                          metaText.text = when (playbackState) {
+                              Player.STATE_BUFFERING -> "Buffering…"
+                              Player.STATE_READY ->
+                                  if (resumeMs > 0L) "Playing in native Media3 player • resumed"
+                                  else "Playing in native Media3 player"
+                              Player.STATE_ENDED -> "Playback ended"
+                              else -> metaText.text
+                          }
+                      }
 
-            override fun onTracksChanged(tracks: Tracks) {
-                val hasText = tracks.groups.any { it.type == C.TRACK_TYPE_TEXT }
-                val hasAudio = tracks.groups.any { it.type == C.TRACK_TYPE_AUDIO }
+                      override fun onPlayerError(error: PlaybackException) {
+                          metaText.text = "Playback error: ${error.errorCodeName}"
+                      }
 
-                trackHint.text = buildString {
-                    append("Audio: ")
-                    append(if (hasAudio) "available" else "none")
-                    append(" • Subtitles: ")
-                    append(if (hasText) "available" else "none")
-                }
-            }
-        })
+                      override fun onTracksChanged(tracks: Tracks) {
+                          val hasText = tracks.groups.any { it.type == C.TRACK_TYPE_TEXT }
+                          val hasAudio = tracks.groups.any { it.type == C.TRACK_TYPE_AUDIO }
 
-        exoPlayer.setMediaItem(mediaItem)
-        exoPlayer.prepare()
-        if (resumeMs > 0L) exoPlayer.seekTo(resumeMs)
-        exoPlayer.playWhenReady = true
-    }
+                          trackHint.text = buildString {
+                              append("Audio: ")
+                              append(if (hasAudio) "available" else "none")
+                              append(" • Subtitles: ")
+                              append(if (hasText) "available" else "none")
+                          }
+                      }
+                  })
 
-    private fun toggleOverlay(forceShow: Boolean? = null) {
-        hintVisible = forceShow ?: !hintVisible
-        val visibility = if (hintVisible) View.VISIBLE else View.GONE
-        (titleText.parent as? View)?.visibility = visibility
-    }
+                  exoPlayer.setMediaItem(mediaItem)
+                  exoPlayer.prepare()
+                  if (resumeMs > 0L) exoPlayer.seekTo(resumeMs)
+                  exoPlayer.playWhenReady = true
+              }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        val activePlayer = player ?: return super.onKeyDown(keyCode, event)
+              private fun toggleOverlay(forceShow: Boolean? = null) {
+                  hintVisible = forceShow ?: !hintVisible
+                  val visibility = if (hintVisible) View.VISIBLE else View.GONE
+                  (titleText.parent as? View)?.visibility = visibility
+              }
 
-        when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_CENTER,
-            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                if (activePlayer.isPlaying) activePlayer.pause() else activePlayer.play()
-                return true
-            }
+              override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+                  val activePlayer = player ?: return super.onKeyDown(keyCode, event)
 
-            KeyEvent.KEYCODE_DPAD_LEFT -> {
-                activePlayer.seekTo((activePlayer.currentPosition - 10_000).coerceAtLeast(0))
-                return true
-            }
+                  when (keyCode) {
+                      KeyEvent.KEYCODE_DPAD_CENTER,
+                      KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                          if (activePlayer.isPlaying) activePlayer.pause() else activePlayer.play()
+                          return true
+                      }
 
-            KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                activePlayer.seekTo(activePlayer.currentPosition + 10_000)
-                return true
-            }
+                      KeyEvent.KEYCODE_DPAD_LEFT -> {
+                          activePlayer.seekTo((activePlayer.currentPosition - 10000).coerceAtLeast(0))
+                          return true
+                      }
 
-            KeyEvent.KEYCODE_DPAD_UP,
-            KeyEvent.KEYCODE_DPAD_DOWN -> {
-                toggleOverlay()
-                return true
-            }
-        }
+                      KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                          activePlayer.seekTo(activePlayer.currentPosition + 10000)
+                          return true
+                      }
 
-        return super.onKeyDown(keyCode, event)
-    }
+                      KeyEvent.KEYCODE_DPAD_UP,
+                      KeyEvent.KEYCODE_DPAD_DOWN -> {
+                          toggleOverlay()
+                          return true
+                      }
+                  }
 
-    override fun onStart() {
-        super.onStart()
-        player?.playWhenReady = true
-    }
+                  return super.onKeyDown(keyCode, event)
+              }
 
-    override fun onStop() {
-        player?.playWhenReady = false
-        super.onStop()
-    }
+              override fun onStart() {
+                  super.onStart()
+                  player?.playWhenReady = true
+              }
 
-    override fun onDestroy() {
-        playerView.player = null
-        player?.release()
-        player = null
-        super.onDestroy()
-    }
+              override fun onStop() {
+                  player?.playWhenReady = false
+                  super.onStop()
+              }
 
-    companion object {
-        const val EXTRA_URL = "extra_url"
-        const val EXTRA_TITLE = "extra_title"
-        const val EXTRA_META = "extra_meta"
-        const val EXTRA_RESUME_MS = "extra_resume_ms"
-    }
-}
-EOF
+              override fun onDestroy() {
+                  playerView.player = null
+                  player?.release()
+                  player = null
+                  super.onDestroy()
+              }
+
+              companion object {
+                  const val EXTRA_URL = "extra_url"
+                  const val EXTRA_TITLE = "extra_title"
+                  const val EXTRA_META = "extra_meta"
+                  const val EXTRA_RESUME_MS = "extra_resume_ms"
+              }
+          }
+          """
+          path.write_text(text, encoding="utf-8")
+          print(f"Wrote {path}")
+          PY
 
       - name: Ensure Gradle wrapper
         shell: bash
         run: |
           set -euo pipefail
           cd "$ROOT_DIR"
+
           if [ ! -f "./gradlew" ]; then
             gradle wrapper --gradle-version 8.7
           fi
+
           chmod +x ./gradlew
 
       - name: Build APK
@@ -965,6 +1024,7 @@ EOF
         shell: bash
         run: |
           set -euo pipefail
+
           APK_PATH="$(find "$ROOT_DIR/app/build/outputs/apk" -type f -name '*.apk' | head -n 1 || true)"
 
           if [ -z "${APK_PATH:-}" ] || [ ! -f "$APK_PATH" ]; then
