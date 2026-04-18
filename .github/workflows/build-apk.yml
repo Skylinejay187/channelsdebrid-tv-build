@@ -14,7 +14,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Find ZIP
+      - name: Locate ZIP
         shell: bash
         run: |
           set -euo pipefail
@@ -34,7 +34,7 @@ jobs:
           echo "ZIP_PATH=$ZIP_PATH" >> "$GITHUB_ENV"
           echo "Using ZIP: $ZIP_PATH"
 
-      - name: Unzip project
+      - name: Extract ZIP
         shell: bash
         run: |
           set -euo pipefail
@@ -42,7 +42,7 @@ jobs:
           mkdir -p project
           unzip -q "$ZIP_PATH" -d project
 
-      - name: Find Android project
+      - name: Locate Android project
         shell: bash
         run: |
           set -euo pipefail
@@ -180,6 +180,9 @@ jobs:
               }
 
               buildTypes {
+                  debug {
+                      isMinifyEnabled = false
+                  }
                   release {
                       isMinifyEnabled = false
                   }
@@ -230,6 +233,9 @@ jobs:
               }
 
               buildTypes {
+                  debug {
+                      minifyEnabled false
+                  }
                   release {
                       minifyEnabled false
                   }
@@ -348,12 +354,8 @@ jobs:
 
           XML_FILE="app/src/main/res/layout/activity_server_setup.xml"
 
-          if [ ! -f "$XML_FILE" ]; then
-            echo "Missing XML file: $XML_FILE"
-            exit 1
-          fi
-
-          python3 <<'PY'
+          if [ -f "$XML_FILE" ]; then
+            python3 <<'PY'
           from pathlib import Path
           import re
 
@@ -363,6 +365,7 @@ jobs:
           xml_path.write_text(text, encoding="utf-8")
           print(f"Patched XML: {xml_path}")
           PY
+          fi
 
       - name: Rewrite AppsActivity.kt
         shell: bash
@@ -370,7 +373,8 @@ jobs:
           set -euo pipefail
           cd "$ROOT_DIR"
 
-          cat > app/src/main/java/com/channelsdebrid/tv/AppsActivity.kt <<'EOF'
+          if [ -f "app/src/main/java/com/channelsdebrid/tv/AppsActivity.kt" ]; then
+            cat > app/src/main/java/com/channelsdebrid/tv/AppsActivity.kt <<'EOF'
           package com.channelsdebrid.tv
 
           import android.content.Intent
@@ -509,6 +513,7 @@ jobs:
               }
           }
           EOF
+          fi
 
       - name: Rewrite PlayerActivity.kt
         shell: bash
@@ -516,7 +521,8 @@ jobs:
           set -euo pipefail
           cd "$ROOT_DIR"
 
-          cat > app/src/main/java/com/channelsdebrid/tv/PlayerActivity.kt <<'EOF'
+          if [ -f "app/src/main/java/com/channelsdebrid/tv/PlayerActivity.kt" ]; then
+            cat > app/src/main/java/com/channelsdebrid/tv/PlayerActivity.kt <<'EOF'
           package com.channelsdebrid.tv
 
           import android.net.Uri
@@ -568,11 +574,4 @@ jobs:
                   if (url.isNotBlank()) {
                       initializePlayer(url, title)
                   } else {
-                      metaText.text = "No playback URL supplied. Launch PlayerActivity with EXTRA_URL."
-                  }
-              }
-
-              private fun initializePlayer(url: String, title: String) {
-                  val exoPlayer = ExoPlayer.Builder(this).build()
-                  player = exoPlayer
-                  playerView.player = exoPlaye
+                      metaText.text = "No playback URL suppli
