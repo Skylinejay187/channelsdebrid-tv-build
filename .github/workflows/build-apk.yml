@@ -6,7 +6,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     env:
       ZIP_NAME: channelsdebrid-final-merged-github-apk-v52-backend-setup-fresh.zip
 
@@ -18,7 +17,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           if [ -f "$ZIP_NAME" ]; then
             ZIP_PATH="$ZIP_NAME"
           else
@@ -46,7 +44,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           ROOT_DIR="$(find project -type f \( -name 'settings.gradle.kts' -o -name 'settings.gradle' \) | head -n 1 | xargs dirname)"
 
           if [ -z "${ROOT_DIR:-}" ] || [ ! -d "$ROOT_DIR" ]; then
@@ -282,12 +279,10 @@ EOF
         run: |
           set -euo pipefail
           cd "$ROOT_DIR"
-
           mkdir -p app/src/main
 
           cat > app/src/main/AndroidManifest.xml <<'EOF'
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
     <uses-feature
         android:name="android.software.leanback"
         android:required="true" />
@@ -342,36 +337,33 @@ EOF
             android:name=".AppsActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
-
     </application>
-
 </manifest>
 EOF
 
-      - name: Fix server setup XML ampersands
+      - name: Fix activity_server_setup.xml
         shell: bash
         run: |
           set -euo pipefail
           cd "$ROOT_DIR"
 
           XML_FILE="app/src/main/res/layout/activity_server_setup.xml"
-
           if [ -f "$XML_FILE" ]; then
             python3 - <<'PY'
 from pathlib import Path
 import re
 
-xml_path = Path("app/src/main/res/layout/activity_server_setup.xml")
-text = xml_path.read_text(encoding="utf-8")
+p = Path("app/src/main/res/layout/activity_server_setup.xml")
+text = p.read_text(encoding="utf-8")
 text = re.sub(r'&(?!amp;|lt;|gt;|apos;|quot;|#\d+;|#x[0-9A-Fa-f]+;)', '&amp;', text)
-xml_path.write_text(text, encoding="utf-8")
-print(f"Patched XML: {xml_path}")
+p.write_text(text, encoding="utf-8")
+print("Patched:", p)
 PY
           else
-            echo "No activity_server_setup.xml found, skipping."
+            echo "Skipping XML patch; file not found."
           fi
 
-      - name: Patch web UI files
+      - name: Patch web UI fullscreen and remove side detail card
         shell: bash
         run: |
           set -euo pipefail
@@ -380,12 +372,11 @@ PY
           python3 - <<'PY'
 from pathlib import Path
 
-files = []
-for pattern in ("*.html", "*.htm", "*.css", "*.js"):
-    files.extend(Path(".").rglob(pattern))
+targets = []
+for ext in ("*.html", "*.htm", "*.css", "*.js"):
+    targets.extend(Path(".").rglob(ext))
 
 css_patch = """
-/* injected tv fullscreen patch */
 html, body, #app, .app, .shell, .page, main {
   width: 100vw !important;
   height: 100vh !important;
@@ -418,7 +409,7 @@ html, body, #app, .app, .shell, .page, main {
 
 js_patch = """
 document.addEventListener('DOMContentLoaded', function () {
-  [
+  var selectors = [
     '.selected-title-panel',
     '.selectedTitlePanel',
     '.detail-panel',
@@ -432,7 +423,9 @@ document.addEventListener('DOMContentLoaded', function () {
     '.browse-details',
     '[data-selected-panel]',
     '[data-role="selected-panel"]'
-  ].forEach(function (sel) {
+  ];
+
+  selectors.forEach(function (sel) {
     document.querySelectorAll(sel).forEach(function (el) {
       el.style.display = 'none';
       el.style.visibility = 'hidden';
@@ -451,45 +444,51 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 """
 
-patched = 0
+count = 0
 
-for path in files:
+for path in targets:
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")
     except Exception:
         continue
 
     original = text
-    lower = text.lower()
+    low = text.lower()
 
-    if "selected title" in lower:
+    if "selected title" in low:
         text = text.replace("Selected Title", "")
-    if "browse details here." in lower:
+    if "Browse details here." in text:
         text = text.replace("Browse details here.", "")
-    if "browse details here" in lower:
+    if "Browse details here" in text:
         text = text.replace("Browse details here", "")
 
     if path.suffix in (".html", ".htm"):
-        if css_patch.strip() not in text:
+        if css_patch not in text:
             if "</head>" in text:
                 text = text.replace("</head>", "<style>\n" + css_patch + "\n</style>\n</head>", 1)
             else:
                 text = "<style>\n" + css_patch + "\n</style>\n" + text
 
-    if path.suffix == ".css":
-        if css_patch.strip() not in text:
+        if js_patch not in text:
+            if "</body>" in text:
+                text = text.replace("</body>", "<script>\n" + js_patch + "\n</script>\n</body>", 1)
+            else:
+                text += "\n<script>\n" + js_patch + "\n</script>\n"
+
+    elif path.suffix == ".css":
+        if css_patch not in text:
             text += "\n" + css_patch + "\n"
 
-    if path.suffix == ".js":
-        if js_patch.strip() not in text:
+    elif path.suffix == ".js":
+        if js_patch not in text:
             text += "\n" + js_patch + "\n"
 
     if text != original:
         path.write_text(text, encoding="utf-8")
-        print(f"Patched UI file: {path}")
-        patched += 1
+        print("Patched:", path)
+        count += 1
 
-print(f"Total patched files: {patched}")
+print("Patched files:", count)
 PY
 
       - name: Rewrite MainActivity.kt
@@ -499,9 +498,12 @@ PY
           cd "$ROOT_DIR"
 
           MAIN_KT="$(find app/src/main/java -type f -name 'MainActivity.kt' | head -n 1 || true)"
+          if [ -z "${MAIN_KT:-}" ] || [ ! -f "$MAIN_KT" ]; then
+            echo "MainActivity.kt not found."
+            exit 1
+          fi
 
-          if [ -n "${MAIN_KT:-}" ] && [ -f "$MAIN_KT" ]; then
-            cat > "$MAIN_KT" <<'EOF'
+          cat > "$MAIN_KT" <<'EOF'
 package com.channelsdebrid.tv
 
 import android.annotation.SuppressLint
@@ -613,9 +615,6 @@ class MainActivity : AppCompatActivity() {
     }
 }
 EOF
-          else
-            echo "MainActivity.kt not found, skipping rewrite."
-          fi
 
       - name: Rewrite AppsActivity.kt
         shell: bash
@@ -624,9 +623,12 @@ EOF
           cd "$ROOT_DIR"
 
           APPS_KT="app/src/main/java/com/channelsdebrid/tv/AppsActivity.kt"
+          if [ ! -f "$APPS_KT" ]; then
+            echo "AppsActivity.kt not found, skipping."
+            exit 0
+          fi
 
-          if [ -f "$APPS_KT" ]; then
-            cat > "$APPS_KT" <<'EOF'
+          cat > "$APPS_KT" <<'EOF'
 package com.channelsdebrid.tv
 
 import android.content.Intent
@@ -766,9 +768,6 @@ class AppsActivity : AppCompatActivity() {
     }
 }
 EOF
-          else
-            echo "AppsActivity.kt not found, skipping rewrite."
-          fi
 
       - name: Rewrite PlayerActivity.kt
         shell: bash
@@ -777,9 +776,12 @@ EOF
           cd "$ROOT_DIR"
 
           PLAYER_KT="app/src/main/java/com/channelsdebrid/tv/PlayerActivity.kt"
+          if [ ! -f "$PLAYER_KT" ]; then
+            echo "PlayerActivity.kt not found, skipping."
+            exit 0
+          fi
 
-          if [ -f "$PLAYER_KT" ]; then
-            cat > "$PLAYER_KT" <<'EOF'
+          cat > "$PLAYER_KT" <<'EOF'
 package com.channelsdebrid.tv
 
 import android.net.Uri
@@ -941,20 +943,15 @@ class PlayerActivity : AppCompatActivity() {
     }
 }
 EOF
-          else
-            echo "PlayerActivity.kt not found, skipping rewrite."
-          fi
 
       - name: Ensure Gradle wrapper
         shell: bash
         run: |
           set -euo pipefail
           cd "$ROOT_DIR"
-
           if [ ! -f "./gradlew" ]; then
             gradle wrapper --gradle-version 8.7
           fi
-
           chmod +x ./gradlew
 
       - name: Build APK
@@ -968,7 +965,6 @@ EOF
         shell: bash
         run: |
           set -euo pipefail
-
           APK_PATH="$(find "$ROOT_DIR/app/build/outputs/apk" -type f -name '*.apk' | head -n 1 || true)"
 
           if [ -z "${APK_PATH:-}" ] || [ ! -f "$APK_PATH" ]; then
