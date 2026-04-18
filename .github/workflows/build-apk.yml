@@ -30,23 +30,25 @@ jobs:
       - name: Install unzip
         run: sudo apt-get update && sudo apt-get install -y unzip findutils
 
-      - name: Select ZIP package
+      - name: Find project ZIP
         id: zip
         shell: bash
         run: |
           set -euo pipefail
-          TARGET_ZIP="./channels-debrid-foundation-package.zip"
-          if [ -f "$TARGET_ZIP" ]; then
-            ZIP_FILE="$TARGET_ZIP"
-          elif ls -1t ./*.zip >/dev/null 2>&1; then
+
+          ZIP_FILE=""
+
+          if ls -1t ./*.zip >/dev/null 2>&1; then
             ZIP_FILE="$(ls -1t ./*.zip | head -n 1)"
           else
             ZIP_FILE="$(find . -type f -name '*.zip' | sort | tail -n 1)"
           fi
+
           if [ -z "${ZIP_FILE}" ] || [ ! -f "${ZIP_FILE}" ]; then
             echo "No ZIP file found in repository."
             exit 1
           fi
+
           echo "Using ZIP: ${ZIP_FILE}"
           echo "zip_file=${ZIP_FILE}" >> "$GITHUB_OUTPUT"
 
@@ -65,34 +67,58 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           SEARCH_ROOT="${{ steps.extract.outputs.extract_dir }}"
-          ROOT="$(find "$SEARCH_ROOT" -type f \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) -print0 \
-            | xargs -0 -I{} dirname "{}" \
-            | while read -r d; do
+
+          ROOT="$(find "$SEARCH_ROOT" -type f \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) -print0             | xargs -0 -I{} dirname "{}"             | while read -r d; do
                 if [ -d "$d/app" ] || find "$d" -maxdepth 2 \( -type f -name 'build.gradle' -o -type f -name 'build.gradle.kts' \) | grep -q .; then
                   echo "$d"
                 fi
-              done \
-            | head -n 1)"
+              done             | head -n 1)"
+
+          if [ -z "${ROOT}" ]; then
+            ROOT="$(find "$SEARCH_ROOT" -type f -name 'gradlew' -print0 | xargs -0 -I{} dirname "{}" | head -n 1)"
+          fi
+
           if [ -z "${ROOT}" ] || [ ! -d "${ROOT}" ]; then
             echo "Could not find Android Gradle project root inside extracted ZIP."
             find "$SEARCH_ROOT" -maxdepth 4 -type f | sed 's#^#FOUND: #' | head -n 200
             exit 1
           fi
+
           echo "Gradle root: ${ROOT}"
           echo "root=${ROOT}" >> "$GITHUB_OUTPUT"
 
-      - name: Build debug APK with Gradle 8.7
+      - name: Ensure Gradle wrapper exists
         shell: bash
         run: |
           set -euo pipefail
           cd "${{ steps.gradle_root.outputs.root }}"
-          gradle assembleDebug --stacktrace
+
+          if [ ! -f ./gradlew ]; then
+            echo "gradlew not found, generating wrapper"
+            if command -v gradle >/dev/null 2>&1; then
+              gradle wrapper
+            else
+              sudo apt-get update
+              sudo apt-get install -y gradle
+              gradle wrapper
+            fi
+          fi
+
+          chmod +x ./gradlew
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${{ steps.gradle_root.outputs.root }}"
+          ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: channels-debrid-foundation-debug-apk
+          name: channels-debrid-debug-apk
           path: |
             ${{ steps.gradle_root.outputs.root }}/app/build/outputs/apk/debug/*.apk
             ${{ steps.gradle_root.outputs.root }}/**/build/outputs/apk/debug/*.apk
