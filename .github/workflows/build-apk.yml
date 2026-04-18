@@ -2,11 +2,6 @@ name: Build Android TV APK from ZIP
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/build-apk.yml'
-      - 'channelsdebrid-final-merged-github-apk-v52-backend-setup-fresh.zip'
-      - '**/*.zip'
 
 jobs:
   build:
@@ -32,6 +27,7 @@ jobs:
 
           if [ -z "${ZIP_PATH:-}" ] || [ ! -f "$ZIP_PATH" ]; then
             echo "No ZIP file found in repository."
+            ls -la
             exit 1
           fi
 
@@ -42,13 +38,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           rm -rf project
           mkdir -p project
           unzip -q "$ZIP_PATH" -d project
-
-          echo "Unzipped contents:"
-          find project -maxdepth 3 -type f | sed -n '1,120p'
 
       - name: Find Android project
         shell: bash
@@ -59,13 +51,12 @@ jobs:
 
           if [ -z "${ROOT_DIR:-}" ] || [ ! -d "$ROOT_DIR" ]; then
             echo "Android project directory not found."
+            find project -maxdepth 5 | sed -n '1,200p'
             exit 1
           fi
 
           echo "ROOT_DIR=$ROOT_DIR" >> "$GITHUB_ENV"
           echo "Android project: $ROOT_DIR"
-
-          find "$ROOT_DIR" -maxdepth 3 -type f | sed -n '1,120p'
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -75,6 +66,16 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses || true
+          sdkmanager \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "platform-tools"
 
       - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
@@ -108,7 +109,7 @@ jobs:
           rootProject.name = "ChannelsDebridTV"
           include(":app")
           EOF
-          elif [ -f "settings.gradle" ]; then
+          else
             cat > settings.gradle <<'EOF'
           pluginManagement {
               repositories {
@@ -129,9 +130,6 @@ jobs:
           rootProject.name = "ChannelsDebridTV"
           include ':app'
           EOF
-          else
-            echo "Missing settings.gradle(.kts)"
-            exit 1
           fi
 
       - name: Rewrite root build.gradle
@@ -147,16 +145,13 @@ jobs:
               id("org.jetbrains.kotlin.android") version "1.9.24" apply false
           }
           EOF
-          elif [ -f "build.gradle" ]; then
+          else
             cat > build.gradle <<'EOF'
           plugins {
               id 'com.android.application' version '8.6.1' apply false
               id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
           }
           EOF
-          else
-            echo "Missing root build.gradle(.kts)"
-            exit 1
           fi
 
       - name: Rewrite app build.gradle
@@ -215,7 +210,7 @@ jobs:
               implementation("androidx.media3:media3-common:1.4.1")
           }
           EOF
-          elif [ -f "app/build.gradle" ]; then
+          else
             cat > app/build.gradle <<'EOF'
           plugins {
               id 'com.android.application'
@@ -265,9 +260,6 @@ jobs:
               implementation 'androidx.media3:media3-common:1.4.1'
           }
           EOF
-          else
-            echo "Missing app/build.gradle(.kts)"
-            exit 1
           fi
 
       - name: Write gradle.properties
@@ -283,20 +275,13 @@ jobs:
           kotlin.code.style=official
           EOF
 
-      - name: Fix AndroidManifest.xml
+      - name: Rewrite AndroidManifest.xml
         shell: bash
         run: |
           set -euo pipefail
           cd "$ROOT_DIR"
 
-          MANIFEST="app/src/main/AndroidManifest.xml"
-
-          if [ ! -f "$MANIFEST" ]; then
-            echo "Missing manifest: $MANIFEST"
-            exit 1
-          fi
-
-          cat > "$MANIFEST" <<'EOF'
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
               <uses-feature
@@ -350,15 +335,6 @@ jobs:
                       android:exported="false"
                       android:screenOrientation="landscape" />
 
-                  <receiver
-                      android:name=".BootReceiver"
-                      android:enabled="true"
-                      android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.BOOT_COMPLETED" />
-                      </intent-filter>
-                  </receiver>
-
               </application>
 
           </manifest>
@@ -383,15 +359,10 @@ jobs:
 
           xml_path = Path("app/src/main/res/layout/activity_server_setup.xml")
           text = xml_path.read_text(encoding="utf-8")
-
           text = re.sub(r'&(?!amp;|lt;|gt;|apos;|quot;|#\d+;|#x[0-9A-Fa-f]+;)', '&amp;', text)
-
           xml_path.write_text(text, encoding="utf-8")
           print(f"Patched XML: {xml_path}")
           PY
-
-          echo "===== XML lines around issue ====="
-          nl -ba "$XML_FILE" | sed -n '58,70p'
 
       - name: Rewrite AppsActivity.kt
         shell: bash
@@ -586,4 +557,22 @@ jobs:
 
                   val title = intent.getStringExtra(EXTRA_TITLE) ?: "Native Player"
                   val url = intent.getStringExtra(EXTRA_URL) ?: ""
-         
+                  val subtitle = intent.getStringExtra(EXTRA_META) ?: "Media3 / ExoPlayer playback"
+                  resumeMs = intent.getLongExtra(EXTRA_RESUME_MS, 0L)
+
+                  titleText.text = title
+                  metaText.text = subtitle
+                  controlsHint.text = "DPAD center: play/pause • Left/Right: seek 10s • Up/Down: show controls"
+                  trackHint.text = "Subtitles/audio selection scaffold ready for next pass"
+
+                  if (url.isNotBlank()) {
+                      initializePlayer(url, title)
+                  } else {
+                      metaText.text = "No playback URL supplied. Launch PlayerActivity with EXTRA_URL."
+                  }
+              }
+
+              private fun initializePlayer(url: String, title: String) {
+                  val exoPlayer = ExoPlayer.Builder(this).build()
+                  player = exoPlayer
+                  playerView.player = exoPlaye
