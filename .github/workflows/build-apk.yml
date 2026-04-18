@@ -2,6 +2,11 @@ name: Build Android TV APK from ZIP
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-apk.yml'
+      - 'channelsdebrid-final-merged-github-apk-v52-backend-setup-fresh.zip'
+      - '**/*.zip'
 
 jobs:
   build:
@@ -14,49 +19,62 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify ZIP exists
+      - name: Find ZIP
         shell: bash
         run: |
-          if [ ! -f "$ZIP_NAME" ]; then
-            echo "ZIP not found: $ZIP_NAME"
-            ls -la
+          set -euo pipefail
+
+          if [ -f "$ZIP_NAME" ]; then
+            ZIP_PATH="$ZIP_NAME"
+          else
+            ZIP_PATH="$(find . -maxdepth 3 -type f -name '*.zip' | head -n 1 || true)"
+          fi
+
+          if [ -z "${ZIP_PATH:-}" ] || [ ! -f "$ZIP_PATH" ]; then
+            echo "No ZIP file found in repository."
             exit 1
           fi
+
+          echo "ZIP_PATH=$ZIP_PATH" >> "$GITHUB_ENV"
+          echo "Using ZIP: $ZIP_PATH"
 
       - name: Unzip project
         shell: bash
         run: |
+          set -euo pipefail
+
           rm -rf project
           mkdir -p project
-          unzip -o "$ZIP_NAME" -d project
+          unzip -q "$ZIP_PATH" -d project
+
+          echo "Unzipped contents:"
+          find project -maxdepth 3 -type f | sed -n '1,120p'
 
       - name: Find Android project
         shell: bash
         run: |
-          ROOT_DIR="$(find project -type d -name android-tv-client | head -n 1)"
-          if [ -z "$ROOT_DIR" ]; then
-            echo "android-tv-client not found"
-            find project -maxdepth 6 -type d | sort
+          set -euo pipefail
+
+          ROOT_DIR="$(find project -type f \( -name 'settings.gradle.kts' -o -name 'settings.gradle' \) | head -n 1 | xargs dirname)"
+
+          if [ -z "${ROOT_DIR:-}" ] || [ ! -d "$ROOT_DIR" ]; then
+            echo "Android project directory not found."
             exit 1
           fi
 
           echo "ROOT_DIR=$ROOT_DIR" >> "$GITHUB_ENV"
-          echo "Using ROOT_DIR=$ROOT_DIR"
+          echo "Android project: $ROOT_DIR"
+
+          find "$ROOT_DIR" -maxdepth 3 -type f | sed -n '1,120p'
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        shell: bash
-        run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
 
       - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
@@ -66,57 +84,157 @@ jobs:
       - name: Rewrite settings.gradle
         shell: bash
         run: |
-          cat > "$ROOT_DIR/settings.gradle" <<'EOF'
-          rootProject.name = 'ChannelsDebridTV'
+          set -euo pipefail
+          cd "$ROOT_DIR"
+
+          if [ -f "settings.gradle.kts" ]; then
+            cat > settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "ChannelsDebridTV"
+          include(":app")
+          EOF
+          elif [ -f "settings.gradle" ]; then
+            cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "ChannelsDebridTV"
           include ':app'
           EOF
+          else
+            echo "Missing settings.gradle(.kts)"
+            exit 1
+          fi
 
       - name: Rewrite root build.gradle
         shell: bash
         run: |
-          cat > "$ROOT_DIR/build.gradle" <<'EOF'
-          buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.6.1'
-                  classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24'
-              }
-          }
+          set -euo pipefail
+          cd "$ROOT_DIR"
 
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
+          if [ -f "build.gradle.kts" ]; then
+            cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.6.1" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
           }
           EOF
+          elif [ -f "build.gradle" ]; then
+            cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.6.1' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
+          }
+          EOF
+          else
+            echo "Missing root build.gradle(.kts)"
+            exit 1
+          fi
 
       - name: Rewrite app build.gradle
         shell: bash
         run: |
-          cat > "$ROOT_DIR/app/build.gradle" <<'EOF'
-          apply plugin: 'com.android.application'
-          apply plugin: 'org.jetbrains.kotlin.android'
+          set -euo pipefail
+          cd "$ROOT_DIR"
+
+          if [ -f "app/build.gradle.kts" ]; then
+            cat > app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "com.channelsdebrid.tv"
+              compileSdk = 35
+
+              defaultConfig {
+                  applicationId = "com.channelsdebrid.tv"
+                  minSdk = 26
+                  targetSdk = 35
+                  versionCode = 1
+                  versionName = "0.1.0"
+              }
+
+              buildTypes {
+                  release {
+                      isMinifyEnabled = false
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+
+              buildFeatures {
+                  viewBinding = true
+              }
+          }
+
+          dependencies {
+              implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.appcompat:appcompat:1.7.0")
+              implementation("androidx.activity:activity-ktx:1.9.2")
+              implementation("androidx.leanback:leanback:1.2.0")
+              implementation("androidx.webkit:webkit:1.11.0")
+              implementation("androidx.media3:media3-exoplayer:1.4.1")
+              implementation("androidx.media3:media3-ui:1.4.1")
+              implementation("androidx.media3:media3-common:1.4.1")
+          }
+          EOF
+          elif [ -f "app/build.gradle" ]; then
+            cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
 
           android {
               namespace 'com.channelsdebrid.tv'
               compileSdk 35
 
               defaultConfig {
-                  applicationId 'com.channelsdebrid.tv'
+                  applicationId "com.channelsdebrid.tv"
                   minSdk 26
                   targetSdk 35
                   versionCode 1
-                  versionName '1.0'
+                  versionName "0.1.0"
               }
 
               buildTypes {
-                  debug {
-                      minifyEnabled false
-                  }
                   release {
                       minifyEnabled false
                   }
@@ -136,98 +254,336 @@ jobs:
               }
           }
 
-          repositories {
-              google()
-              mavenCentral()
-          }
-
           dependencies {
               implementation 'androidx.core:core-ktx:1.13.1'
               implementation 'androidx.appcompat:appcompat:1.7.0'
+              implementation 'androidx.activity:activity-ktx:1.9.2'
               implementation 'androidx.leanback:leanback:1.2.0'
+              implementation 'androidx.webkit:webkit:1.11.0'
               implementation 'androidx.media3:media3-exoplayer:1.4.1'
               implementation 'androidx.media3:media3-ui:1.4.1'
+              implementation 'androidx.media3:media3-common:1.4.1'
           }
           EOF
+          else
+            echo "Missing app/build.gradle(.kts)"
+            exit 1
+          fi
 
       - name: Write gradle.properties
         shell: bash
         run: |
-          cat > "$ROOT_DIR/gradle.properties" <<'EOF'
+          set -euo pipefail
+          cd "$ROOT_DIR"
+
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8
           android.useAndroidX=true
           android.enableJetifier=true
-          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+          kotlin.code.style=official
           EOF
 
-      - name: Fix AndroidManifest package attribute
+      - name: Fix AndroidManifest.xml
         shell: bash
         run: |
-          MANIFEST="$ROOT_DIR/app/src/main/AndroidManifest.xml"
-          if [ -f "$MANIFEST" ]; then
-            sed -i 's/ package="com\.channelsdebrid\.tv"//g' "$MANIFEST" || true
+          set -euo pipefail
+          cd "$ROOT_DIR"
+
+          MANIFEST="app/src/main/AndroidManifest.xml"
+
+          if [ ! -f "$MANIFEST" ]; then
+            echo "Missing manifest: $MANIFEST"
+            exit 1
           fi
 
-      - name: Remove stray backup files from resources
-        shell: bash
-        run: |
-          find "$ROOT_DIR/app/src/main/res" -type f \( -name "*.bak" -o -name "*.orig" -o -name "*.tmp" \) -print -delete || true
+          cat > "$MANIFEST" <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-      - name: Fix activity_server_setup.xml ampersands in place
+              <uses-feature
+                  android:name="android.software.leanback"
+                  android:required="true" />
+              <uses-feature
+                  android:name="android.hardware.touchscreen"
+                  android:required="false" />
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="ChannelsDebrid TV"
+                  android:theme="@style/Theme.ChannelsDebridTV"
+                  android:usesCleartextTraffic="true">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:label="ChannelsDebrid TV"
+                      android:theme="@style/Theme.ChannelsDebridTV">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <activity
+                      android:name=".HomeActivity"
+                      android:exported="false" />
+
+                  <activity
+                      android:name=".PlayerActivity"
+                      android:exported="false"
+                      android:launchMode="singleTask"
+                      android:screenOrientation="landscape" />
+
+                  <activity
+                      android:name=".SettingsActivity"
+                      android:exported="false" />
+
+                  <activity
+                      android:name=".ServerSetupActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
+
+                  <activity
+                      android:name=".AppsActivity"
+                      android:exported="false"
+                      android:screenOrientation="landscape" />
+
+                  <receiver
+                      android:name=".BootReceiver"
+                      android:enabled="true"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.BOOT_COMPLETED" />
+                      </intent-filter>
+                  </receiver>
+
+              </application>
+
+          </manifest>
+          EOF
+
+      - name: Fix activity_server_setup.xml
         shell: bash
         run: |
-          XML_FILE="$ROOT_DIR/app/src/main/res/layout/activity_server_setup.xml"
+          set -euo pipefail
+          cd "$ROOT_DIR"
+
+          XML_FILE="app/src/main/res/layout/activity_server_setup.xml"
 
           if [ ! -f "$XML_FILE" ]; then
             echo "Missing XML file: $XML_FILE"
             exit 1
           fi
 
-          python3 - "$XML_FILE" <<'PY'
-          import re
-          import sys
+          python3 <<'PY'
           from pathlib import Path
+          import re
 
-          xml_path = Path(sys.argv[1])
+          xml_path = Path("app/src/main/res/layout/activity_server_setup.xml")
           text = xml_path.read_text(encoding="utf-8")
 
-          text = text.replace("\r\n", "\n").replace("\r", "\n")
-
-          text = re.sub(
-              r'&(?!amp;|lt;|gt;|apos;|quot;|#\d+;|#x[0-9A-Fa-f]+;)',
-              '&amp;',
-              text
-          )
+          text = re.sub(r'&(?!amp;|lt;|gt;|apos;|quot;|#\d+;|#x[0-9A-Fa-f]+;)', '&amp;', text)
 
           xml_path.write_text(text, encoding="utf-8")
-          print(f"Patched XML in place: {xml_path}")
+          print(f"Patched XML: {xml_path}")
           PY
 
-          echo "===== XML lines 58-70 after patch ====="
+          echo "===== XML lines around issue ====="
           nl -ba "$XML_FILE" | sed -n '58,70p'
 
-      - name: Build APK with Gradle 8.7
+      - name: Rewrite AppsActivity.kt
         shell: bash
         run: |
+          set -euo pipefail
           cd "$ROOT_DIR"
-          gradle :app:assembleDebug --stacktrace --info
 
-      - name: Collect APK
+          cat > app/src/main/java/com/channelsdebrid/tv/AppsActivity.kt <<'EOF'
+          package com.channelsdebrid.tv
+
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.graphics.Color
+          import android.graphics.drawable.ColorDrawable
+          import android.graphics.drawable.Drawable
+          import android.os.Bundle
+          import android.util.TypedValue
+          import android.view.Gravity
+          import android.view.View
+          import android.view.ViewGroup
+          import android.widget.BaseAdapter
+          import android.widget.GridView
+          import android.widget.ImageView
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import androidx.appcompat.app.AppCompatActivity
+
+          class AppsActivity : AppCompatActivity() {
+
+              data class AppEntry(
+                  val label: String,
+                  val packageName: String,
+                  val activityName: String,
+                  val icon: Drawable?
+              )
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  val pm = packageManager
+                  val intent = Intent(Intent.ACTION_MAIN, null).apply {
+                      addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+                  }
+
+                  val apps = pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)
+                      .map {
+                          AppEntry(
+                              label = it.loadLabel(pm).toString(),
+                              packageName = it.activityInfo.packageName,
+                              activityName = it.activityInfo.name,
+                              icon = it.loadIcon(pm)
+                          )
+                      }
+                      .sortedBy { it.label.lowercase() }
+
+                  val grid = GridView(this).apply {
+                      numColumns = 4
+                      horizontalSpacing = dp(18)
+                      verticalSpacing = dp(18)
+                      stretchMode = GridView.STRETCH_COLUMN_WIDTH
+                      clipToPadding = false
+                      setPadding(dp(28), dp(28), dp(28), dp(28))
+                      setBackgroundColor(Color.parseColor("#05070C"))
+                      selector = ColorDrawable(Color.TRANSPARENT)
+                      adapter = AppsAdapter(apps)
+                      isFocusable = true
+                      isFocusableInTouchMode = true
+                  }
+
+                  grid.setOnItemClickListener { _, _, position, _ ->
+                      val app = apps[position]
+                      val launch = Intent(Intent.ACTION_MAIN).apply {
+                          addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+                          setClassName(app.packageName, app.activityName)
+                          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                      }
+                      startActivity(launch)
+                  }
+
+                  setContentView(grid)
+              }
+
+              private fun dp(value: Int): Int {
+                  return TypedValue.applyDimension(
+                      TypedValue.COMPLEX_UNIT_DIP,
+                      value.toFloat(),
+                      resources.displayMetrics
+                  ).toInt()
+              }
+
+              inner class AppsAdapter(private val items: List<AppEntry>) : BaseAdapter() {
+                  override fun getCount(): Int = items.size
+                  override fun getItem(position: Int): Any = items[position]
+                  override fun getItemId(position: Int): Long = position.toLong()
+
+                  override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+                      val context = this@AppsActivity
+                      val entry = items[position]
+
+                      val root = if (convertView == null) {
+                          LinearLayout(context).apply {
+                              orientation = LinearLayout.VERTICAL
+                              gravity = Gravity.CENTER_HORIZONTAL
+                              setPadding(dp(14), dp(14), dp(14), dp(14))
+                              setBackgroundColor(Color.parseColor("#141923"))
+                              layoutParams = GridView.LayoutParams(
+                                  ViewGroup.LayoutParams.MATCH_PARENT,
+                                  dp(210)
+                              )
+                              isFocusable = true
+                              isClickable = true
+                          }
+                      } else {
+                          convertView as LinearLayout
+                      }
+
+                      root.removeAllViews()
+
+                      val iconView = ImageView(context).apply {
+                          layoutParams = LinearLayout.LayoutParams(dp(84), dp(84))
+                          setImageDrawable(entry.icon)
+                      }
+
+                      val labelView = TextView(context).apply {
+                          text = entry.label
+                          setTextColor(Color.WHITE)
+                          setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                          gravity = Gravity.CENTER
+                          maxLines = 2
+                          setPadding(0, dp(12), 0, 0)
+                      }
+
+                      root.addView(iconView)
+                      root.addView(labelView)
+
+                      root.setOnFocusChangeListener { view, hasFocus ->
+                          view.scaleX = if (hasFocus) 1.06f else 1.0f
+                          view.scaleY = if (hasFocus) 1.06f else 1.0f
+                          view.alpha = if (hasFocus) 1.0f else 0.96f
+                      }
+
+                      return root
+                  }
+              }
+          }
+          EOF
+
+      - name: Rewrite PlayerActivity.kt
         shell: bash
         run: |
-          APK_PATH="$(find "$ROOT_DIR" -type f -path "*/build/outputs/apk/debug/*.apk" | head -n 1)"
-          if [ -z "$APK_PATH" ]; then
-            echo "APK not found"
-            find "$ROOT_DIR" -type f -name "*.apk" | sort || true
-            exit 1
-          fi
+          set -euo pipefail
+          cd "$ROOT_DIR"
 
-          echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
-          cp "$APK_PATH" app-debug.apk
-          ls -lh app-debug.apk
+          cat > app/src/main/java/com/channelsdebrid/tv/PlayerActivity.kt <<'EOF'
+          package com.channelsdebrid.tv
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: channelsdebrid-tv-apk
-          path: app-debug.apk
-          if-no-files-found: error
+          import android.net.Uri
+          import android.os.Bundle
+          import android.view.KeyEvent
+          import android.view.View
+          import android.widget.TextView
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.media3.common.C
+          import androidx.media3.common.MediaItem
+          import androidx.media3.common.PlaybackException
+          import androidx.media3.common.Player
+          import androidx.media3.common.Tracks
+          import androidx.media3.exoplayer.ExoPlayer
+          import androidx.media3.ui.PlayerView
+
+          class PlayerActivity : AppCompatActivity() {
+
+              private var player: ExoPlayer? = null
+              private lateinit var playerView: PlayerView
+              private lateinit var titleText: TextView
+              private lateinit var metaText: TextView
+              private lateinit var controlsHint: TextView
+              private lateinit var trackHint: TextView
+
+              private var resumeMs: Long = 0L
+              private var hintVisible = true
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_player)
+
+                  playerView = findViewById(R.id.playerView)
+                  titleText = findViewById(R.id.titleText)
+                  metaText = findViewById(R.id.metaText)
+                  controlsHint = findViewById(R.id.controlsHint)
+                  trackHint = findViewById(R.id.trackHint)
+
+                  val title = intent.getStringExtra(EXTRA_TITLE) ?: "Native Player"
+                  val url = intent.getStringExtra(EXTRA_URL) ?: ""
+         
