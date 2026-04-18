@@ -15,6 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Verify ZIP exists
+        shell: bash
         run: |
           if [ ! -f "$ZIP_NAME" ]; then
             echo "ZIP not found: $ZIP_NAME"
@@ -22,13 +23,15 @@ jobs:
             exit 1
           fi
 
-      - name: Extract ZIP
+      - name: Unzip project
+        shell: bash
         run: |
           rm -rf project
           mkdir -p project
           unzip -o "$ZIP_NAME" -d project
 
-      - name: Locate Android project
+      - name: Find Android project
+        shell: bash
         run: |
           ROOT_DIR="$(find project -type d -name android-tv-client | head -n 1)"
           if [ -z "$ROOT_DIR" ]; then
@@ -36,6 +39,7 @@ jobs:
             find project -maxdepth 6 -type d | sort
             exit 1
           fi
+
           echo "ROOT_DIR=$ROOT_DIR" >> "$GITHUB_ENV"
           echo "Using ROOT_DIR=$ROOT_DIR"
 
@@ -48,7 +52,8 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK packages
+      - name: Install Android packages
+        shell: bash
         run: |
           yes | sdkmanager --licenses || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
@@ -59,6 +64,7 @@ jobs:
           gradle-version: 8.7
 
       - name: Rewrite settings.gradle
+        shell: bash
         run: |
           cat > "$ROOT_DIR/settings.gradle" <<'EOF'
           rootProject.name = 'ChannelsDebridTV'
@@ -66,6 +72,7 @@ jobs:
           EOF
 
       - name: Rewrite root build.gradle
+        shell: bash
         run: |
           cat > "$ROOT_DIR/build.gradle" <<'EOF'
           buildscript {
@@ -88,6 +95,7 @@ jobs:
           EOF
 
       - name: Rewrite app build.gradle
+        shell: bash
         run: |
           cat > "$ROOT_DIR/app/build.gradle" <<'EOF'
           apply plugin: 'com.android.application'
@@ -143,6 +151,7 @@ jobs:
           EOF
 
       - name: Write gradle.properties
+        shell: bash
         run: |
           cat > "$ROOT_DIR/gradle.properties" <<'EOF'
           android.useAndroidX=true
@@ -151,15 +160,18 @@ jobs:
           EOF
 
       - name: Fix AndroidManifest package attribute
+        shell: bash
         run: |
           MANIFEST="$ROOT_DIR/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
             sed -i 's/ package="com\.channelsdebrid\.tv"//g' "$MANIFEST" || true
           fi
 
-      - name: Force fix XML ampersands in activity_server_setup.xml
+      - name: Force-fix activity_server_setup.xml
+        shell: bash
         run: |
           XML_FILE="$ROOT_DIR/app/src/main/res/layout/activity_server_setup.xml"
+
           if [ ! -f "$XML_FILE" ]; then
             echo "Missing XML file: $XML_FILE"
             exit 1
@@ -175,6 +187,10 @@ jobs:
           xml_path = Path(sys.argv[1])
           text = xml_path.read_text(encoding="utf-8")
 
+          # Normalize CRLF first
+          text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+          # Escape every raw ampersand that is not already a valid XML entity
           text = re.sub(
               r'&(?!amp;|lt;|gt;|apos;|quot;|#\d+;|#x[0-9A-Fa-f]+;)',
               '&amp;',
@@ -185,15 +201,17 @@ jobs:
           print(f"Patched XML: {xml_path}")
           PY
 
-          echo "===== XML lines around failure ====="
+          echo "===== XML lines 58-70 after patch ====="
           nl -ba "$XML_FILE" | sed -n '58,70p'
 
       - name: Build APK with Gradle 8.7
+        shell: bash
         run: |
           cd "$ROOT_DIR"
           gradle :app:assembleDebug --stacktrace --info
 
-      - name: Find APK
+      - name: Collect APK
+        shell: bash
         run: |
           APK_PATH="$(find "$ROOT_DIR" -type f -path "*/build/outputs/apk/debug/*.apk" | head -n 1)"
           if [ -z "$APK_PATH" ]; then
@@ -201,6 +219,7 @@ jobs:
             find "$ROOT_DIR" -type f -name "*.apk" | sort || true
             exit 1
           fi
+
           echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
           cp "$APK_PATH" app-debug.apk
           ls -lh app-debug.apk
