@@ -574,4 +574,167 @@ jobs:
                   if (url.isNotBlank()) {
                       initializePlayer(url, title)
                   } else {
-                      metaText.text = "No playback URL suppli
+                      metaText.text = "No playback URL supplied. Launch PlayerActivity with EXTRA_URL."
+                  }
+              }
+
+              private fun initializePlayer(url: String, title: String) {
+                  val exoPlayer = ExoPlayer.Builder(this).build()
+                  player = exoPlayer
+                  playerView.player = exoPlayer
+
+                  val mediaItem = MediaItem.Builder()
+                      .setUri(Uri.parse(url))
+                      .setMediaId(title)
+                      .build()
+
+                  exoPlayer.addListener(object : Player.Listener {
+                      override fun onPlaybackStateChanged(playbackState: Int) {
+                          metaText.text = when (playbackState) {
+                              Player.STATE_BUFFERING -> "Buffering…"
+                              Player.STATE_READY ->
+                                  if (resumeMs > 0L) {
+                                      "Playing in native Media3 player • resumed"
+                                  } else {
+                                      "Playing in native Media3 player"
+                                  }
+
+                              Player.STATE_ENDED -> "Playback ended"
+                              else -> metaText.text
+                          }
+                      }
+
+                      override fun onPlayerError(error: PlaybackException) {
+                          metaText.text = "Playback error: ${error.errorCodeName}"
+                      }
+
+                      override fun onTracksChanged(tracks: Tracks) {
+                          val hasText = tracks.groups.any { group ->
+                              group.type == C.TRACK_TYPE_TEXT
+                          }
+                          val hasAudio = tracks.groups.any { group ->
+                              group.type == C.TRACK_TYPE_AUDIO
+                          }
+
+                          trackHint.text = buildString {
+                              append("Audio: ")
+                              append(if (hasAudio) "available" else "none")
+                              append(" • Subtitles: ")
+                              append(if (hasText) "available" else "none")
+                          }
+                      }
+                  })
+
+                  exoPlayer.setMediaItem(mediaItem)
+                  exoPlayer.prepare()
+                  if (resumeMs > 0L) exoPlayer.seekTo(resumeMs)
+                  exoPlayer.playWhenReady = true
+              }
+
+              private fun toggleOverlay(forceShow: Boolean? = null) {
+                  hintVisible = forceShow ?: !hintVisible
+                  val visibility = if (hintVisible) View.VISIBLE else View.GONE
+                  (titleText.parent as? View)?.visibility = visibility
+              }
+
+              override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+                  val activePlayer = player ?: return super.onKeyDown(keyCode, event)
+
+                  when (keyCode) {
+                      KeyEvent.KEYCODE_DPAD_CENTER,
+                      KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                          if (activePlayer.isPlaying) activePlayer.pause() else activePlayer.play()
+                          return true
+                      }
+
+                      KeyEvent.KEYCODE_DPAD_LEFT -> {
+                          activePlayer.seekTo((activePlayer.currentPosition - 10_000).coerceAtLeast(0))
+                          return true
+                      }
+
+                      KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                          activePlayer.seekTo(activePlayer.currentPosition + 10_000)
+                          return true
+                      }
+
+                      KeyEvent.KEYCODE_DPAD_UP,
+                      KeyEvent.KEYCODE_DPAD_DOWN -> {
+                          toggleOverlay()
+                          return true
+                      }
+                  }
+
+                  return super.onKeyDown(keyCode, event)
+              }
+
+              override fun onStart() {
+                  super.onStart()
+                  player?.playWhenReady = true
+              }
+
+              override fun onStop() {
+                  player?.playWhenReady = false
+                  super.onStop()
+              }
+
+              override fun onDestroy() {
+                  playerView.player = null
+                  player?.release()
+                  player = null
+                  super.onDestroy()
+              }
+
+              companion object {
+                  const val EXTRA_URL = "extra_url"
+                  const val EXTRA_TITLE = "extra_title"
+                  const val EXTRA_META = "extra_meta"
+                  const val EXTRA_RESUME_MS = "extra_resume_ms"
+              }
+          }
+          EOF
+          fi
+
+      - name: Ensure Gradle wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ROOT_DIR"
+
+          if [ ! -f "./gradlew" ]; then
+            gradle wrapper --gradle-version 8.7
+          fi
+
+          chmod +x ./gradlew
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ROOT_DIR"
+          ./gradlew :app:assembleDebug --stacktrace --info
+
+      - name: Copy APK to fixed artifact name
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK_PATH="$(find "$ROOT_DIR/app/build/outputs/apk" -type f -name '*.apk' | head -n 1 || true)"
+
+          if [ -z "${APK_PATH:-}" ] || [ ! -f "$APK_PATH" ]; then
+            echo "APK not found."
+            find "$ROOT_DIR/app/build" -maxdepth 6 -type f | sed -n '1,200p' || true
+            exit 1
+          fi
+
+          echo "Found APK: $APK_PATH"
+          cp "$APK_PATH" "$GITHUB_WORKSPACE/channelsdebrid-tv-debug.apk"
+          ls -lh "$GITHUB_WORKSPACE/channelsdebrid-tv-debug.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: channelsdebrid-tv-debug-apk
+          path: ${{ github.workspace }}/channelsdebrid-tv-debug.apk
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
