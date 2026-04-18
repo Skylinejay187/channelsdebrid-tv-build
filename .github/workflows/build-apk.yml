@@ -1,4 +1,4 @@
-name: Build Android TV APK (Native)
+name: Build Android TV APK from ZIP
 
 on:
   workflow_dispatch:
