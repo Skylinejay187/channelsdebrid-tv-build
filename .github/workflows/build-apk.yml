@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      ZIP_NAME: channelsdebrid-native-tv-v8-1.zip
+      ZIP_NAME: channelsdebrid-native-tv-v8-2.zip
 
     steps:
       - name: Checkout
