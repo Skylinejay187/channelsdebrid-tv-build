@@ -52,7 +52,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android packages
+      - name: Install Android SDK packages
         shell: bash
         run: |
           yes | sdkmanager --licenses || true
@@ -167,7 +167,12 @@ jobs:
             sed -i 's/ package="com\.channelsdebrid\.tv"//g' "$MANIFEST" || true
           fi
 
-      - name: Force-fix activity_server_setup.xml
+      - name: Remove stray backup files from resources
+        shell: bash
+        run: |
+          find "$ROOT_DIR/app/src/main/res" -type f \( -name "*.bak" -o -name "*.orig" -o -name "*.tmp" \) -print -delete || true
+
+      - name: Fix activity_server_setup.xml ampersands in place
         shell: bash
         run: |
           XML_FILE="$ROOT_DIR/app/src/main/res/layout/activity_server_setup.xml"
@@ -177,8 +182,6 @@ jobs:
             exit 1
           fi
 
-          cp "$XML_FILE" "$XML_FILE.bak"
-
           python3 - "$XML_FILE" <<'PY'
           import re
           import sys
@@ -187,10 +190,8 @@ jobs:
           xml_path = Path(sys.argv[1])
           text = xml_path.read_text(encoding="utf-8")
 
-          # Normalize CRLF first
           text = text.replace("\r\n", "\n").replace("\r", "\n")
 
-          # Escape every raw ampersand that is not already a valid XML entity
           text = re.sub(
               r'&(?!amp;|lt;|gt;|apos;|quot;|#\d+;|#x[0-9A-Fa-f]+;)',
               '&amp;',
@@ -198,7 +199,7 @@ jobs:
           )
 
           xml_path.write_text(text, encoding="utf-8")
-          print(f"Patched XML: {xml_path}")
+          print(f"Patched XML in place: {xml_path}")
           PY
 
           echo "===== XML lines 58-70 after patch ====="
