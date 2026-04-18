@@ -18,16 +18,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           if [ -f "$ZIP_NAME" ]; then
             ZIP_PATH="$ZIP_NAME"
           else
             ZIP_PATH="$(find . -maxdepth 3 -type f -name '*.zip' | head -n 1 || true)"
           fi
+
           if [ -z "${ZIP_PATH:-}" ] || [ ! -f "$ZIP_PATH" ]; then
             echo "No ZIP file found in repository."
-            find . -maxdepth 3 -type f | sed -n '1,200p'
+            ls -la
             exit 1
           fi
+
           echo "ZIP_PATH=$ZIP_PATH" >> "$GITHUB_ENV"
           echo "Using ZIP: $ZIP_PATH"
 
@@ -43,12 +46,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ROOT_DIR="$(find project -type f \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) | head -n 1 | xargs dirname)"
+
+          ROOT_DIR="$(find project -type f \( -name 'settings.gradle.kts' -o -name 'settings.gradle' \) | head -n 1 | xargs dirname)"
+
           if [ -z "${ROOT_DIR:-}" ] || [ ! -d "$ROOT_DIR" ]; then
-            echo "Android project not found"
+            echo "Android project directory not found."
             find project -maxdepth 5 | sed -n '1,200p'
             exit 1
           fi
+
           echo "ROOT_DIR=$ROOT_DIR" >> "$GITHUB_ENV"
           echo "Android project: $ROOT_DIR"
 
@@ -56,59 +62,328 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install SDK packages
+      - name: Install Android SDK packages
         shell: bash
         run: |
           set -euo pipefail
           yes | sdkmanager --licenses || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          sdkmanager \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "platform-tools"
 
       - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: 8.7
+          gradle-version: "8.7"
 
-      - name: Ensure wrapper
+      - name: Ensure Gradle wrapper
         shell: bash
         run: |
           set -euo pipefail
           cd "$ROOT_DIR"
-          if [ ! -f ./gradlew ]; then
+
+          if [ ! -f "./gradlew" ]; then
             gradle wrapper --gradle-version 8.7
           fi
+
           chmod +x ./gradlew
+
+      - name: Rewrite settings.gradle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ROOT_DIR"
+
+          if [ -f "settings.gradle.kts" ]; then
+            cat > settings.gradle.kts <<'EOF'
+            pluginManagement {
+                repositories {
+                    google()
+                    mavenCentral()
+                    gradlePluginPortal()
+                }
+            }
+
+            dependencyResolutionManagement {
+                repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+                repositories {
+                    google()
+                    mavenCentral()
+                }
+            }
+
+            rootProject.name = "ChannelsDebridTV"
+            include(":app")
+            EOF
+          else
+            cat > settings.gradle <<'EOF'
+            pluginManagement {
+                repositories {
+                    google()
+                    mavenCentral()
+                    gradlePluginPortal()
+                }
+            }
+
+            dependencyResolutionManagement {
+                repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+                repositories {
+                    google()
+                    mavenCentral()
+                }
+            }
+
+            rootProject.name = "ChannelsDebridTV"
+            include ':app'
+            EOF
+          fi
+
+      - name: Rewrite root build.gradle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ROOT_DIR"
+
+          if [ -f "build.gradle.kts" ]; then
+            cat > build.gradle.kts <<'EOF'
+            plugins {
+                id("com.android.application") version "8.6.1" apply false
+                id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+            }
+            EOF
+          else
+            cat > build.gradle <<'EOF'
+            plugins {
+                id 'com.android.application' version '8.6.1' apply false
+                id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
+            }
+            EOF
+          fi
+
+      - name: Rewrite app build.gradle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ROOT_DIR"
+
+          if [ -f "app/build.gradle.kts" ]; then
+            cat > app/build.gradle.kts <<'EOF'
+            plugins {
+                id("com.android.application")
+                id("org.jetbrains.kotlin.android")
+            }
+
+            android {
+                namespace = "com.channelsdebrid.tv"
+                compileSdk = 35
+
+                defaultConfig {
+                    applicationId = "com.channelsdebrid.tv"
+                    minSdk = 26
+                    targetSdk = 35
+                    versionCode = 1
+                    versionName = "0.1.0"
+                }
+
+                buildTypes {
+                    debug {
+                        isMinifyEnabled = false
+                    }
+                    release {
+                        isMinifyEnabled = false
+                    }
+                }
+
+                compileOptions {
+                    sourceCompatibility = JavaVersion.VERSION_17
+                    targetCompatibility = JavaVersion.VERSION_17
+                }
+
+                kotlinOptions {
+                    jvmTarget = "17"
+                }
+
+                buildFeatures {
+                    viewBinding = true
+                }
+            }
+
+            dependencies {
+                implementation("androidx.core:core-ktx:1.13.1")
+                implementation("androidx.appcompat:appcompat:1.7.0")
+                implementation("androidx.activity:activity-ktx:1.9.2")
+                implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+                implementation("androidx.leanback:leanback:1.2.0")
+                implementation("androidx.webkit:webkit:1.11.0")
+                implementation("androidx.media3:media3-exoplayer:1.4.1")
+                implementation("androidx.media3:media3-ui:1.4.1")
+                implementation("androidx.media3:media3-common:1.4.1")
+            }
+            EOF
+          else
+            cat > app/build.gradle <<'EOF'
+            plugins {
+                id 'com.android.application'
+                id 'org.jetbrains.kotlin.android'
+            }
+
+            android {
+                namespace 'com.channelsdebrid.tv'
+                compileSdk 35
+
+                defaultConfig {
+                    applicationId "com.channelsdebrid.tv"
+                    minSdk 26
+                    targetSdk 35
+                    versionCode 1
+                    versionName "0.1.0"
+                }
+
+                buildTypes {
+                    debug {
+                        minifyEnabled false
+                    }
+                    release {
+                        minifyEnabled false
+                    }
+                }
+
+                compileOptions {
+                    sourceCompatibility JavaVersion.VERSION_17
+                    targetCompatibility JavaVersion.VERSION_17
+                }
+
+                kotlinOptions {
+                    jvmTarget = '17'
+                }
+
+                buildFeatures {
+                    viewBinding true
+                }
+            }
+
+            dependencies {
+                implementation 'androidx.core:core-ktx:1.13.1'
+                implementation 'androidx.appcompat:appcompat:1.7.0'
+                implementation 'androidx.activity:activity-ktx:1.9.2'
+                implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+                implementation 'androidx.leanback:leanback:1.2.0'
+                implementation 'androidx.webkit:webkit:1.11.0'
+                implementation 'androidx.media3:media3-exoplayer:1.4.1'
+                implementation 'androidx.media3:media3-ui:1.4.1'
+                implementation 'androidx.media3:media3-common:1.4.1'
+            }
+            EOF
+          fi
+
+      - name: Write gradle.properties
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ROOT_DIR"
+
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.enableJetifier=true
+          kotlin.code.style=official
+          EOF
+
+      - name: Rewrite AndroidManifest.xml
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ROOT_DIR"
+
+          mkdir -p app/src/main
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-feature
+                  android:name="android.software.leanback"
+                  android:required="true" />
+              <uses-feature
+                  android:name="android.hardware.touchscreen"
+                  android:required="false" />
+
+              <uses-permission android:name="android.permission.INTERNET" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="ChannelsDebrid TV"
+                  android:theme="@style/Theme.ChannelsDebridTV"
+                  android:usesCleartextTraffic="true">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:label="ChannelsDebrid TV"
+                      android:theme="@style/Theme.ChannelsDebridTV">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+              </application>
+
+          </manifest>
+          EOF
+
+      - name: Fix invalid android:selected attribute
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ROOT_DIR"
+
+          FILE="app/src/main/res/layout/activity_main.xml"
+
+          if [ -f "$FILE" ]; then
+            sed -i 's/[[:space:]]android:selected="[^"]*"//g' "$FILE"
+            echo "Removed invalid android:selected attributes from $FILE"
+            nl -ba "$FILE" | sed -n '100,145p'
+          else
+            echo "activity_main.xml not found at $FILE"
+            find app/src/main/res -maxdepth 3 -type f | sed -n '1,200p' || true
+            exit 1
+          fi
 
       - name: Build APK
         shell: bash
         run: |
           set -euo pipefail
           cd "$ROOT_DIR"
-          ./gradlew :app:assembleDebug --stacktrace
+          ./gradlew :app:assembleDebug --stacktrace --info
 
-      - name: Copy APK
+      - name: Copy APK to fixed artifact name
         shell: bash
         run: |
           set -euo pipefail
+
           APK_PATH="$(find "$ROOT_DIR/app/build/outputs/apk" -type f -name '*.apk' | head -n 1 || true)"
+
           if [ -z "${APK_PATH:-}" ] || [ ! -f "$APK_PATH" ]; then
-            echo "APK not found"
+            echo "APK not found."
             find "$ROOT_DIR/app/build" -maxdepth 6 -type f | sed -n '1,200p' || true
             exit 1
           fi
-          cp "$APK_PATH" "$GITHUB_WORKSPACE/channelsdebrid-native-tv-debug.apk"
-          ls -lh "$GITHUB_WORKSPACE/channelsdebrid-native-tv-debug.apk"
+
+          echo "Found APK: $APK_PATH"
+          cp "$APK_PATH" "$GITHUB_WORKSPACE/channelsdebrid-tv-debug.apk"
+          ls -lh "$GITHUB_WORKSPACE/channelsdebrid-tv-debug.apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: channelsdebrid-native-tv-debug-apk
-          path: ${{ github.workspace }}/channelsdebrid-native-tv-debug.apk
+          name: channelsdebrid-tv-debug-apk
+          path: ${{ github.workspace }}/channelsdebrid-tv-debug.apk
           if-no-files-found: error
           overwrite: true
           retention-days: 7
-
