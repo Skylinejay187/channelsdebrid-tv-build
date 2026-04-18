@@ -11,96 +11,185 @@ jobs:
       ZIP_NAME: channelsdebrid-native-tv.zip
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Locate ZIP
+        shell: bash
         run: |
+          set -euo pipefail
+
           if [ -f "$ZIP_NAME" ]; then
-            echo "ZIP_PATH=$ZIP_NAME" >> $GITHUB_ENV
+            ZIP_PATH="$ZIP_NAME"
           else
-            ZIP_PATH=$(find . -name "*.zip" | head -n 1)
-            echo "ZIP_PATH=$ZIP_PATH" >> $GITHUB_ENV
+            ZIP_PATH="$(find . -maxdepth 3 -type f -name '*.zip' | head -n 1 || true)"
           fi
 
+          if [ -z "${ZIP_PATH:-}" ] || [ ! -f "$ZIP_PATH" ]; then
+            echo "No ZIP file found in repository."
+            ls -la
+            exit 1
+          fi
+
+          echo "ZIP_PATH=$ZIP_PATH" >> "$GITHUB_ENV"
+          echo "Using ZIP: $ZIP_PATH"
+
       - name: Extract ZIP
+        shell: bash
         run: |
+          set -euo pipefail
           rm -rf project
-          mkdir project
+          mkdir -p project
           unzip -q "$ZIP_PATH" -d project
 
-      - name: Locate Project
+      - name: Locate Android project
+        shell: bash
         run: |
-          ROOT_DIR=$(find project -name settings.gradle -o -name settings.gradle.kts | head -n 1 | xargs dirname)
-          echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
+          set -euo pipefail
 
-      - name: Setup Java
+          ROOT_DIR="$(find project -type f \( -name 'settings.gradle.kts' -o -name 'settings.gradle' \) | head -n 1 | xargs dirname)"
+
+          if [ -z "${ROOT_DIR:-}" ] || [ ! -d "$ROOT_DIR" ]; then
+            echo "Android project directory not found."
+            find project -maxdepth 5 | sed -n '1,200p'
+            exit 1
+          fi
+
+          echo "ROOT_DIR=$ROOT_DIR" >> "$GITHUB_ENV"
+          echo "Android project: $ROOT_DIR"
+
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: "17"
 
-      - name: Setup Android
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install SDK
+      - name: Install Android SDK packages
+        shell: bash
         run: |
+          set -euo pipefail
           yes | sdkmanager --licenses || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "platform-tools"
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: 8.7
+          gradle-version: "8.7"
 
-      - name: Ensure Wrapper
+      - name: Ensure Gradle wrapper
+        shell: bash
         run: |
+          set -euo pipefail
           cd "$ROOT_DIR"
-          [ -f gradlew ] || gradle wrapper
-          chmod +x gradlew
 
-      # ✅ FIX: remove invalid android:selected
-      - name: Fix XML
-        run: |
-          cd "$ROOT_DIR"
-          FILE="app/src/main/res/layout/activity_main.xml"
-          if [ -f "$FILE" ]; then
-            sed -i 's/android:selected="[^"]*"//g' "$FILE"
+          if [ ! -f "./gradlew" ]; then
+            gradle wrapper --gradle-version 8.7
           fi
 
-      # ✅ SAFE FILE WRITES (NO EOF)
-      - name: Write Gradle Files
+          chmod +x ./gradlew
+
+      - name: Write build files safely
+        shell: bash
         run: |
+          set -euo pipefail
           cd "$ROOT_DIR"
 
           python3 - <<'PY'
-from pathlib import Path
+          from pathlib import Path
 
-Path("gradle.properties").write_text(
-"""org.gradle.jvmargs=-Xmx4g
-android.useAndroidX=true
-android.enableJetifier=true
-""")
+          root_gradle = Path("build.gradle")
+          root_gradle.write_text(
+          """plugins {
+              id 'com.android.application' version '8.6.1' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
+          }
+          """,
+          encoding="utf-8"
+          )
 
-Path("build.gradle").write_text(
-"""plugins {
-    id 'com.android.application' version '8.6.1' apply false
-    id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
-}
-""")
-PY
+          settings_gradle = Path("settings.gradle")
+          settings_gradle.write_text(
+          """pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "ChannelsDebridTV"
+          include ':app'
+          """,
+          encoding="utf-8"
+          )
+
+          gradle_props = Path("gradle.properties")
+          gradle_props.write_text(
+          """org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.enableJetifier=true
+          kotlin.code.style=official
+          """,
+          encoding="utf-8"
+          )
+          PY
+
+      - name: Fix invalid android:selected attribute
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ROOT_DIR"
+
+          FILE="app/src/main/res/layout/activity_main.xml"
+
+          if [ -f "$FILE" ]; then
+            sed -i 's/[[:space:]]android:selected="[^"]*"//g' "$FILE"
+            echo "Removed invalid android:selected attributes from $FILE"
+          fi
 
       - name: Build APK
+        shell: bash
         run: |
+          set -euo pipefail
           cd "$ROOT_DIR"
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew :app:assembleDebug --stacktrace --info
 
-      - name: Find APK
+      - name: Copy APK to fixed artifact name
+        shell: bash
         run: |
-          APK=$(find "$ROOT_DIR" -name "*.apk" | head -n 1)
-          cp "$APK" app.apk
+          set -euo pipefail
 
-      - name: Upload APK
+          APK_PATH="$(find "$ROOT_DIR/app/build/outputs/apk" -type f -name '*.apk' | head -n 1 || true)"
+
+          if [ -z "${APK_PATH:-}" ] || [ ! -f "$APK_PATH" ]; then
+            echo "APK not found."
+            find "$ROOT_DIR/app/build" -maxdepth 6 -type f | sed -n '1,200p' || true
+            exit 1
+          fi
+
+          echo "Found APK: $APK_PATH"
+          cp "$APK_PATH" "$GITHUB_WORKSPACE/channelsdebrid-tv-debug.apk"
+          ls -lh "$GITHUB_WORKSPACE/channelsdebrid-tv-debug.apk"
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: apk
-          path: app.apk
+          name: channelsdebrid-tv-debug-apk
+          path: ${{ github.workspace }}/channelsdebrid-tv-debug.apk
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
