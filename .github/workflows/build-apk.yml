@@ -7,20 +7,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    env:
-      ZIP_NAME: channelsdebrid-native-tv-fixed-v3.zip
-
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Locate ZIP
+      - name: Find ZIP
         run: |
-          if [ -f "$ZIP_NAME" ]; then
-            echo "ZIP_PATH=$ZIP_NAME" >> $GITHUB_ENV
-          else
-            ZIP_PATH=$(find . -name "*.zip" | head -n 1)
-            echo "ZIP_PATH=$ZIP_PATH" >> $GITHUB_ENV
-          fi
+          ZIP_PATH=$(find . -name "*.zip" | head -n 1)
+          echo "ZIP_PATH=$ZIP_PATH" >> $GITHUB_ENV
+          echo "Using ZIP: $ZIP_PATH"
 
       - name: Extract ZIP
         run: |
@@ -28,10 +23,11 @@ jobs:
           mkdir project
           unzip -q "$ZIP_PATH" -d project
 
-      - name: Locate Android Project
+      - name: Find Android Project
         run: |
-          ROOT_DIR=$(find project -name settings.gradle* | head -n 1 | xargs dirname)
+          ROOT_DIR=$(find project -name "settings.gradle*" | head -n 1 | xargs dirname)
           echo "ROOT_DIR=$ROOT_DIR" >> $GITHUB_ENV
+          echo "Project: $ROOT_DIR"
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -39,7 +35,7 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Android
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Install SDK
@@ -52,23 +48,21 @@ jobs:
         with:
           gradle-version: 8.7
 
-      # 🔥 CRITICAL FIX: REMOVE ALL EXISTING GRADLE FILES
-      - name: Clean broken Gradle config
+      # 🔥 CLEAN EVERYTHING THAT BREAKS BUILDS
+      - name: Clean Gradle configs
         run: |
           cd "$ROOT_DIR"
           rm -f settings.gradle.kts
           rm -f build.gradle.kts
           rm -f app/build.gradle.kts
 
-      # 🔥 WRITE CORRECT FILES
-      - name: Write working Gradle config
+      # 🔥 REWRITE SAFE CONFIG
+      - name: Write working config
         run: |
           cd "$ROOT_DIR"
 
-          python3 - <<'PY'
-from pathlib import Path
-
-Path("settings.gradle").write_text("""pluginManagement {
+          cat > settings.gradle <<EOF
+pluginManagement {
     repositories {
         google()
         mavenCentral()
@@ -86,62 +80,22 @@ dependencyResolutionManagement {
 
 rootProject.name = "ChannelsDebridTV"
 include ':app'
-""")
+EOF
 
-Path("build.gradle").write_text("""plugins {
+          cat > build.gradle <<EOF
+plugins {
     id 'com.android.application' version '8.6.1' apply false
     id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
 }
-""")
+EOF
 
-Path("gradle.properties").write_text("""org.gradle.jvmargs=-Xmx4g
+          cat > gradle.properties <<EOF
+org.gradle.jvmargs=-Xmx4g
 android.useAndroidX=true
 android.enableJetifier=true
-""")
+EOF
 
-Path("app/build.gradle").write_text("""plugins {
-    id 'com.android.application'
-    id 'org.jetbrains.kotlin.android'
-}
-
-android {
-    namespace 'com.channelsdebrid.tv'
-    compileSdk 35
-
-    defaultConfig {
-        applicationId "com.channelsdebrid.tv"
-        minSdk 26
-        targetSdk 35
-        versionCode 1
-        versionName "1.0"
-    }
-
-    buildTypes {
-        debug { minifyEnabled false }
-        release { minifyEnabled false }
-    }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-    }
-
-    kotlinOptions { jvmTarget = '17' }
-
-    buildFeatures { viewBinding true }
-}
-
-dependencies {
-    implementation 'androidx.core:core-ktx:1.13.1'
-    implementation 'androidx.appcompat:appcompat:1.7.0'
-    implementation 'androidx.activity:activity-ktx:1.9.2'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'androidx.leanback:leanback:1.2.0'
-}
-""")
-PY
-
-      - name: Ensure Gradle wrapper
+      - name: Ensure wrapper
         run: |
           cd "$ROOT_DIR"
           gradle wrapper --gradle-version 8.7
