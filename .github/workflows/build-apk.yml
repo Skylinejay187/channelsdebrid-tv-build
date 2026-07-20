@@ -1,60 +1,125 @@
-name: Build Debrid Channels Android TV
+name: Build APK From ZIP
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
-  pull_request:
-
-permissions:
-  contents: read
+    paths:
+      - '**.zip'
+      - '.github/workflows/**.yml'
+      - '.github/workflows/**.yaml'
 
 jobs:
-  build:
+  build-apk-from-zip:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle 8.13 and cache
+      - name: Set up Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.13"
+          gradle-version: '8.7'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Install unzip
+        run: sudo apt-get update && sudo apt-get install -y unzip findutils
 
-      - name: Install Android SDK packages
-        run: yes | sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+      - name: Find Android project ZIP
+        id: zip
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      - name: Make Gradle executable
-        run: chmod +x gradlew
+          ZIP_FILE=""
+          while IFS= read -r candidate; do
+            echo "Checking ZIP: ${candidate}"
+            if zipinfo -1 "${candidate}" | grep -Eq '(^|/)settings\.gradle(\.kts)?$' \
+              && zipinfo -1 "${candidate}" | grep -Eq '(^|/)app/build\.gradle(\.kts)?$'; then
+              ZIP_FILE="${candidate}"
+              break
+            fi
+          done < <(find . -type f -name '*.zip' -printf '%T@ %p\n' | sort -nr | cut -d' ' -f2-)
 
-      - name: Unit tests
-        run: gradle --no-daemon testDebugUnitTest
+          if [ -z "${ZIP_FILE}" ] || [ ! -f "${ZIP_FILE}" ]; then
+            echo "No Android project ZIP found. Upload the Android app zip, not the backend/log zip."
+            find . -type f -name '*.zip' -print | sed 's#^#FOUND ZIP: #'
+            exit 1
+          fi
 
-      - name: Lint
-        run: gradle --no-daemon lintDebug
+          echo "Using Android ZIP: ${ZIP_FILE}"
+          echo "zip_file=${ZIP_FILE}" >> "$GITHUB_OUTPUT"
 
-      - name: Build debug APK and release bundle
-        run: gradle --no-daemon :app:assembleDebug :app:assembleRelease :app:bundleRelease
+      - name: Extract ZIP
+        id: extract
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf extracted_project
+          mkdir -p extracted_project
+          # -o is required because some generated zips contain duplicate paths.
+          # Without it, unzip prompts for overwrite and GitHub Actions fails.
+          unzip -oq "${{ steps.zip.outputs.zip_file }}" -d extracted_project
+          echo "extract_dir=extracted_project" >> "$GITHUB_OUTPUT"
 
-      - name: Upload APKs and bundle
+      - name: Find Android Gradle root inside extracted ZIP
+        id: gradle_root
+        shell: bash
+        run: |
+          set -euo pipefail
+          SEARCH_ROOT="${{ steps.extract.outputs.extract_dir }}"
+
+          ROOT="$(find "$SEARCH_ROOT" -type f \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) -print0 \
+            | xargs -0 -I{} dirname "{}" \
+            | while read -r d; do
+                if [ -d "$d/app" ] && find "$d/app" -maxdepth 1 \( -name 'build.gradle' -o -name 'build.gradle.kts' \) | grep -q .; then
+                  echo "$d"
+                fi
+              done \
+            | head -n 1)"
+
+          if [ -z "${ROOT}" ] || [ ! -d "${ROOT}" ]; then
+            echo "Could not find Android Gradle project root inside extracted ZIP."
+            find "$SEARCH_ROOT" -maxdepth 5 -type f | sed 's#^#FOUND: #' | head -n 300
+            exit 1
+          fi
+
+          echo "Gradle root: ${ROOT}"
+          echo "root=${ROOT}" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure AndroidX Gradle properties
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${{ steps.gradle_root.outputs.root }}"
+          touch gradle.properties
+          grep -q '^android.useAndroidX=true' gradle.properties || echo 'android.useAndroidX=true' >> gradle.properties
+          grep -q '^android.enableJetifier=true' gradle.properties || echo 'android.enableJetifier=true' >> gradle.properties
+          grep -q '^org.gradle.jvmargs=' gradle.properties || echo 'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' >> gradle.properties
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${{ steps.gradle_root.outputs.root }}"
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug --stacktrace
+          else
+            gradle assembleDebug --stacktrace
+          fi
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DebridChannels-AndroidTV-Phase1
-          if-no-files-found: error
+          name: channels-debrid-debug-apk
           path: |
-            app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
-            app/build/reports/lint-results-debug.html
-            
+            ${{ steps.gradle_root.outputs.root }}/app/build/outputs/apk/debug/*.apk
+            ${{ steps.gradle_root.outputs.root }}/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          
