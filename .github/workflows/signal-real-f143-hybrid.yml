@@ -1,25 +1,31 @@
 name: Signal F143 Real Hybrid Conversion
+
 on:
   workflow_dispatch:
   push:
     paths:
       - 'Signal_AndroidTV_Checkpoint_*.zip'
+
 permissions:
   contents: read
+
 jobs:
   real-f143-hybrid:
     runs-on: macos-15
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - name: Select latest checkpoint
+
+      - name: Select latest F143 checkpoint
         shell: bash
         run: |
           set -euo pipefail
           ZIP="$(find . -maxdepth 2 -name 'Signal_AndroidTV_Checkpoint_*.zip' -type f | sort -V | tail -1)"
           test -n "$ZIP"
           echo "CHECKPOINT_ZIP=$ZIP" >> "$GITHUB_ENV"
-      - name: Extract original source
+          echo "Selected $ZIP"
+
+      - name: Extract original Swift source
         shell: bash
         run: |
           set -euo pipefail
@@ -27,48 +33,96 @@ jobs:
           unzip -oq "$CHECKPOINT_ZIP" -d checkpoint
           test -s checkpoint/tools/real_f143_hybrid_gate.py
           test -s checkpoint/reference/apple-original/Sources/UnitySurfaceSystem.swift
-      - name: Install Skip and Swift Android SDK
+
+      - name: Install Skip and native Swift Android SDK
         shell: bash
         run: |
           set -euo pipefail
           brew install skip
           swiftly init --skip-install --assume-yes --quiet-shell-followup
           skip android sdk install 2>&1 | tee skip-hybrid-results/native-sdk.txt
-          skip checkup --native 2>&1 | tee skip-hybrid-results/checkup.txt
-      - name: Create and populate both original-source modules
+
+      - name: Record Skip environment diagnostics (not a compilation gate)
+        shell: bash
+        run: |
+          set +e
+          skip version > skip-hybrid-results/skip-version.txt 2>&1
+          skip doctor --native > skip-hybrid-results/doctor-native.txt 2>&1
+          echo "$?" > skip-hybrid-results/doctor-native.exit
+          # skip checkup --native compiles an unrelated SkipFuseUI sample, which currently fails
+          # in third-party Button.swift before real Signal modules are examined.
+          # Always run both real Signal module tests independently below.
+
+      - name: Create real Lite and Fuse source projects
         shell: bash
         run: |
           set -euo pipefail
           skip init --no-build --transpiled-model signal-unity-lite SignalUnityLite 2>&1 | tee skip-hybrid-results/init-lite.txt
           skip init --no-build --native-model signal-player-fuse SignalPlayerFuse 2>&1 | tee skip-hybrid-results/init-fuse.txt
           python3 checkpoint/tools/real_f143_hybrid_gate.py --checkpoint-root checkpoint --lite-project signal-unity-lite --fuse-project signal-player-fuse --diagnostics skip-hybrid-results
-      - name: Convert real Unity Swift with Skip Lite
+
+      - name: Verify original F143 Unity Swift with Skip Lite
+        id: lite
         shell: bash
         run: |
-          set -o pipefail
-          (cd signal-unity-lite && skip verify) 2>&1 | tee skip-hybrid-results/lite-verify.txt
-      - name: Compile real Swift policy with Skip Fuse
+          set +e
+          (cd signal-unity-lite && skip verify) > skip-hybrid-results/lite-verify.txt 2>&1
+          result=$?
+          cat skip-hybrid-results/lite-verify.txt
+          echo "$result" > skip-hybrid-results/lite-exit.txt
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Verify original F143 Up Next Swift with Skip Fuse
+        id: fuse
+        shell: bash
         if: always()
-        shell: bash
         run: |
-          set -o pipefail
+          set +e
           if [ -d signal-player-fuse ]; then
-            (cd signal-player-fuse && skip verify) 2>&1 | tee skip-hybrid-results/fuse-verify.txt
+            (cd signal-player-fuse && skip verify) > skip-hybrid-results/fuse-verify.txt 2>&1
+            result=$?
           else
-            echo "Fuse project not created" | tee skip-hybrid-results/fuse-verify.txt
-            exit 1
+            echo "Fuse project was not created" > skip-hybrid-results/fuse-verify.txt
+            result=99
           fi
-      - name: Index generated outputs
+          cat skip-hybrid-results/fuse-verify.txt
+          echo "$result" > skip-hybrid-results/fuse-exit.txt
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Capture converted Kotlin and native output index
         if: always()
         shell: bash
         run: |
           mkdir -p skip-hybrid-results
           find signal-unity-lite signal-player-fuse -type f \( -name '*.kt' -o -name '*.java' -o -name '*.so' \) -print > skip-hybrid-results/output-index.txt 2>/dev/null || true
-          echo "This run is a real-source conversion test, not an integrated Signal APK." > skip-hybrid-results/README.txt
+          cat > skip-hybrid-results/README.txt <<'EOF'
+          This workflow tests ORIGINAL F143 Swift modules, not a sample.
+          Skip checkup --native was previously blocked by unrelated SkipSwiftUI Button.swift compiler errors.
+          This workflow captures Lite and Fuse outcomes separately.
+          Neither a passing module verification nor this workflow produces an integrated Signal APK.
+          See lite-verify.txt, fuse-verify.txt, and the corresponding exit files.
+          EOF
+
       - name: Upload conversion diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Signal-F143-Real-Skip-Hybrid-Results
           path: skip-hybrid-results/
-          if-no-files-found: warn
+          if-no-files-found: error
+
+      - name: Fail if real Signal module verification failed
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -s skip-hybrid-results/lite-exit.txt ] || [ ! -s skip-hybrid-results/fuse-exit.txt ]; then
+            echo "One or both real Swift conversion checks were not reached"
+            exit 1
+          fi
+          lite="$(cat skip-hybrid-results/lite-exit.txt)"
+          fuse="$(cat skip-hybrid-results/fuse-exit.txt)"
+          echo "Real F143 Lite exit code: $lite"
+          echo "Real F143 Fuse exit code: $fuse"
+          test "$lite" = 0 && test "$fuse" = 0
