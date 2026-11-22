@@ -61,49 +61,56 @@ jobs:
           skip init --no-build --native-model signal-player-fuse SignalPlayerFuse 2>&1 | tee skip-hybrid-results/init-fuse.txt
           python3 checkpoint/tools/real_f143_hybrid_gate.py --checkpoint-root checkpoint --lite-project signal-unity-lite --fuse-project signal-player-fuse --diagnostics skip-hybrid-results
 
-      - name: Verify original F143 Unity Swift with Skip Lite
+      - name: Compile and export original F143 Unity module with Skip Lite
         id: lite
         shell: bash
         run: |
           set +e
-          (cd signal-unity-lite && skip verify) > skip-hybrid-results/lite-verify.txt 2>&1
+          mkdir -p skip-hybrid-results/lite-export
+          (cd signal-unity-lite && skip export --debug --dir "$GITHUB_WORKSPACE/skip-hybrid-results/lite-export") > skip-hybrid-results/lite-build.txt 2>&1
           result=$?
-          cat skip-hybrid-results/lite-verify.txt
+          tail -n 120 skip-hybrid-results/lite-build.txt
           echo "$result" > skip-hybrid-results/lite-exit.txt
           echo "result=$result" >> "$GITHUB_OUTPUT"
           exit 0
 
-      - name: Verify original F143 Up Next Swift with Skip Fuse
+      - name: Compile and export original F143 Swift module with Skip Fuse
         id: fuse
-        shell: bash
         if: always()
+        shell: bash
         run: |
           set +e
+          mkdir -p skip-hybrid-results/fuse-export
           if [ -d signal-player-fuse ]; then
-            (cd signal-player-fuse && skip verify) > skip-hybrid-results/fuse-verify.txt 2>&1
+            (cd signal-player-fuse && skip export --debug --dir "$GITHUB_WORKSPACE/skip-hybrid-results/fuse-export") > skip-hybrid-results/fuse-build.txt 2>&1
             result=$?
           else
-            echo "Fuse project was not created" > skip-hybrid-results/fuse-verify.txt
+            echo "Fuse project was not created" > skip-hybrid-results/fuse-build.txt
             result=99
           fi
-          cat skip-hybrid-results/fuse-verify.txt
+          tail -n 120 skip-hybrid-results/fuse-build.txt
           echo "$result" > skip-hybrid-results/fuse-exit.txt
           echo "result=$result" >> "$GITHUB_OUTPUT"
           exit 0
 
-      - name: Capture converted Kotlin and native output index
+      - name: Capture actual converted outputs and detailed build evidence
         if: always()
         shell: bash
         run: |
           mkdir -p skip-hybrid-results
-          find signal-unity-lite signal-player-fuse -type f \( -name '*.kt' -o -name '*.java' -o -name '*.so' \) -print > skip-hybrid-results/output-index.txt 2>/dev/null || true
+          find signal-unity-lite signal-player-fuse skip-hybrid-results/lite-export skip-hybrid-results/fuse-export \\
+            -type f \\( -name '*.kt' -o -name '*.java' -o -name '*.so' -o -name '*.aar' \\) -print > skip-hybrid-results/output-index.txt 2>/dev/null || true
+          find signal-unity-lite/.build signal-player-fuse/.build -type f \\( -name '*.kt' -o -name '*.java' -o -name '*.so' -o -name '*.aar' \\) -print >> skip-hybrid-results/output-index.txt 2>/dev/null || true
+          sort -u skip-hybrid-results/output-index.txt -o skip-hybrid-results/output-index.txt
           cat > skip-hybrid-results/README.txt <<'EOF'
-          This workflow tests ORIGINAL F143 Swift modules, not a sample.
-          Skip checkup --native was previously blocked by unrelated SkipSwiftUI Button.swift compiler errors.
-          This workflow captures Lite and Fuse outcomes separately.
-          Neither a passing module verification nor this workflow produces an integrated Signal APK.
-          See lite-verify.txt, fuse-verify.txt, and the corresponding exit files.
+          REAL F143 source compilation gate, not a verification-only test.
+          Lite attempts skip export to transpile original UnitySurfaceSystem.swift and AppTab.swift.
+          Fuse attempts skip export to compile original SignalUpNextDismissalState.swift.
+          Zero exit codes and nonempty exports are prerequisites before app integration.
+          This workflow does not create a full Signal Android APK.
           EOF
+          echo "Export and build outputs:"
+          cat skip-hybrid-results/output-index.txt
 
       - name: Upload conversion diagnostics
         if: always()
@@ -118,7 +125,7 @@ jobs:
         shell: bash
         run: |
           if [ ! -s skip-hybrid-results/lite-exit.txt ] || [ ! -s skip-hybrid-results/fuse-exit.txt ]; then
-            echo "One or both real Swift conversion checks were not reached"
+            echo "One or both original Swift compilation attempts were not reached"
             exit 1
           fi
           lite="$(cat skip-hybrid-results/lite-exit.txt)"
