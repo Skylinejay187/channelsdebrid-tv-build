@@ -122,7 +122,7 @@ jobs:
             (cd signal-f143-fuse && skip export --debug --dir "$EXPORT_DIR") > "$log" 2>&1
             compiled=$?
             cp "$log" "$RESULTS_DIR/whole-app-compile.txt"
-            printf '%s\\n' "$compiled" > "$RESULTS_DIR/whole-app-exit-code.txt"
+            echo "$compiled" > "$RESULTS_DIR/whole-app-exit-code.txt"
             echo "Full-source Skip Fuse export exit code: $compiled"
             tail -n 70 "$log"
             echo "::endgroup::"
@@ -135,9 +135,9 @@ jobs:
               break
             fi
             report="$RESULTS_DIR/visibility-patch-attempt-$pass.json"
-            python3 .github/scripts/f143_skip_visibility_bridge.py \\
-              --log "$log" \\
-              --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \\
+            python3 .github/scripts/f143_skip_visibility_bridge.py \
+              --log "$log" \
+              --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \
               --report "$report"
             edits=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["applied_change_count"])' "$report")
             echo "Targeted compatibility edits: $edits"
