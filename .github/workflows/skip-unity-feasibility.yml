@@ -72,9 +72,19 @@ jobs:
           python3 - <<'PY'
           import pathlib,re
           s=pathlib.Path("extracted/reference/apple-original/Sources/CatalogStore.swift").read_text()
-          m=re.search(r'enum AppTab:\s*String,\s*CaseIterable,\s*Identifiable\s*\{[^}]*\}',s,re.S)
-          if not m: raise SystemExit("Could not locate the real AppTab definition")
-          pathlib.Path("signal-unity-probe/Sources/SignalUnityProbe/AppTab.swift").write_text("import Foundation\n"+m.group(0)+"\n")
+          start=s.index("enum AppTab:")
+          opening=s.index("{",start)
+          depth=0
+          end=None
+          for i in range(opening,len(s)):
+              if s[i]=="{": depth+=1
+              elif s[i]=="}":
+                  depth-=1
+                  if depth==0:
+                      end=i+1
+                      break
+          if end is None: raise SystemExit("Original AppTab enum is incomplete")
+          pathlib.Path("signal-unity-probe/Sources/SignalUnityProbe/AppTab.swift").write_text("import Foundation\\n"+s[start:end]+"\\n")
           print("Inserted original UnitySurfaceSystem.swift and real AppTab definition into Skip Lite model")
           PY
           shasum -a 256 signal-unity-probe/Sources/SignalUnityProbe/*.swift | tee skip-diagnostics/probe-source-hashes.txt
