@@ -88,7 +88,7 @@ jobs:
                       end=i+1
                       break
           if end is None: raise SystemExit("Original AppTab enum is incomplete")
-          pathlib.Path("signal-unity-probe/Sources/SignalUnityProbe/AppTab.swift").write_text("import Foundation\\n"+s[start:end]+"\\n")
+          pathlib.Path("signal-unity-probe/Sources/SignalUnityProbe/AppTab.swift").write_text("import Foundation\n"+s[start:end]+"\n")
           print("Inserted original UnitySurfaceSystem.swift and real AppTab definition into Skip Lite model")
           PY
           shasum -a 256 signal-unity-probe/Sources/SignalUnityProbe/*.swift | tee skip-diagnostics/probe-source-hashes.txt
