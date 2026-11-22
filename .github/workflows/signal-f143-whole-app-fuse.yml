@@ -14,6 +14,7 @@ on:
       - 'Signal_F143_Full_Source_Fuse_Attempt*.zip'
       - '.github/workflows/signal-f143-whole-app-fuse.yml'
       - '.github/scripts/f143_skip_visibility_bridge.py'
+      - '.github/scripts/f143_wire_unity_root.py'
 
 permissions:
   contents: read
@@ -109,6 +110,17 @@ jobs:
           test -s signal-f143-fuse/Sources/SignalF143Fuse/F143Original/DebridChannelsTVOSApp.swift
           test -s signal-f143-fuse/Sources/SignalF143Fuse/F143Original/UnitySurfaceSystem.swift
 
+      - name: Wire real Signal F143 Unity RootView into Android app entry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/f143_wire_unity_root.py \
+            --skip-project signal-f143-fuse \
+            --report "$RESULTS_DIR/unity-entry-wiring.json"
+          test -s signal-f143-fuse/Sources/SignalF143Fuse/ContentView.swift
+          grep -q 'RootView()' signal-f143-fuse/Sources/SignalF143Fuse/ContentView.swift
+          grep -q 'environmentObject(unityCore)' signal-f143-fuse/Sources/SignalF143Fuse/ContentView.swift
+
       - name: Compile F143 and auto-repair only compiler-reported SwiftUI visibility blockers
         id: compile
         shell: bash
@@ -187,6 +199,16 @@ jobs:
           path: f143-fuse-results/
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Refuse placeholder Android APK before app artifact publication
+        if: steps.compile.outputs.exit_code == '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$RESULTS_DIR/unity-entry-wiring.json"
+          grep -q 'RootView()' signal-f143-fuse/Sources/SignalF143Fuse/ContentView.swift
+          grep -q 'environmentObject(unityCore)' signal-f143-fuse/Sources/SignalF143Fuse/ContentView.swift
+          echo 'APK compiled from original Signal F143 RootView entry.'
 
       - name: Upload new Skip Fuse Android APK only if genuinely built
         if: steps.compile.outputs.exit_code == '0'
