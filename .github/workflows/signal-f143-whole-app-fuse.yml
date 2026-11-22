@@ -12,6 +12,8 @@ on:
     branches: [main, master]
     paths:
       - 'Signal_F143_Full_Source_Fuse_Attempt*.zip'
+      - '.github/workflows/signal-f143-whole-app-fuse.yml'
+      - '.github/scripts/f143_skip_visibility_bridge.py'
 
 permissions:
   contents: read
@@ -107,18 +109,44 @@ jobs:
           test -s signal-f143-fuse/Sources/SignalF143Fuse/F143Original/DebridChannelsTVOSApp.swift
           test -s signal-f143-fuse/Sources/SignalF143Fuse/F143Original/UnitySurfaceSystem.swift
 
-      - name: COMPILE full original SwiftUI application and export Android APK
+      - name: Compile F143 and auto-repair only compiler-reported SwiftUI visibility blockers
         id: compile
         shell: bash
         run: |
           set +e
-          (cd signal-f143-fuse && skip export --debug --dir "$EXPORT_DIR") \
-            > "$RESULTS_DIR/whole-app-compile.txt" 2>&1
-          result=$?
-          echo "$result" > "$RESULTS_DIR/whole-app-exit-code.txt"
-          echo "exit_code=$result" >> "$GITHUB_OUTPUT"
-          echo "Skip Fuse full-application export exit code: $result"
-          tail -n 120 "$RESULTS_DIR/whole-app-compile.txt"
+          compiled=1
+          max_passes=12
+          for pass in $(seq 1 "$max_passes"); do
+            echo "::group::F143 full-source Skip Fuse compile attempt $pass of $max_passes"
+            log="$RESULTS_DIR/whole-app-compile-attempt-$pass.txt"
+            (cd signal-f143-fuse && skip export --debug --dir "$EXPORT_DIR") > "$log" 2>&1
+            compiled=$?
+            cp "$log" "$RESULTS_DIR/whole-app-compile.txt"
+            printf '%s\\n' "$compiled" > "$RESULTS_DIR/whole-app-exit-code.txt"
+            echo "Full-source Skip Fuse export exit code: $compiled"
+            tail -n 70 "$log"
+            echo "::endgroup::"
+            if [ "$compiled" -eq 0 ]; then
+              echo "Full-source export passed on attempt $pass"
+              break
+            fi
+            if [ "$pass" -eq "$max_passes" ]; then
+              echo "::warning::Reached maximum diagnostic-driven patch attempts"
+              break
+            fi
+            report="$RESULTS_DIR/visibility-patch-attempt-$pass.json"
+            python3 .github/scripts/f143_skip_visibility_bridge.py \\
+              --log "$log" \\
+              --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \\
+              --report "$report"
+            edits=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["applied_change_count"])' "$report")
+            echo "Targeted compatibility edits: $edits"
+            if [ "$edits" -eq 0 ]; then
+              echo "No known safe automatic fixes remain; preserving real compiler failure"
+              break
+            fi
+          done
+          echo "exit_code=$compiled" >> "$GITHUB_OUTPUT"
           exit 0
 
       - name: Extract actual compiler errors and find built APK
@@ -141,6 +169,12 @@ jobs:
             echo "Compile exit code: $(cat "$GITHUB_WORKSPACE/f143-fuse-results/whole-app-exit-code.txt" 2>/dev/null || echo NOT_REACHED)"
             echo '### APK paths (if any)'
             cat "$GITHUB_WORKSPACE/f143-fuse-results/apk-paths.txt"
+            echo '### Skip bridge repair attempts'
+            for report in "$GITHUB_WORKSPACE"/f143-fuse-results/visibility-patch-attempt-*.json; do
+              if [ -f "$report" ]; then
+                echo "- $(basename "$report"): $(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["applied_change_count"])' "$report") edits"
+              fi
+            done
             echo '### First compiler errors'
             head -n 40 "$GITHUB_WORKSPACE/f143-fuse-results/compiler-errors-first250.txt" 2>/dev/null || true
           } >> "$GITHUB_STEP_SUMMARY"
