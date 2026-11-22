@@ -1,0 +1,74 @@
+name: Signal F143 Real Hybrid Conversion
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Signal_AndroidTV_Checkpoint_*.zip'
+permissions:
+  contents: read
+jobs:
+  real-f143-hybrid:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select latest checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP="$(find . -maxdepth 2 -name 'Signal_AndroidTV_Checkpoint_*.zip' -type f | sort -V | tail -1)"
+          test -n "$ZIP"
+          echo "CHECKPOINT_ZIP=$ZIP" >> "$GITHUB_ENV"
+      - name: Extract original source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p checkpoint skip-hybrid-results
+          unzip -oq "$CHECKPOINT_ZIP" -d checkpoint
+          test -s checkpoint/tools/real_f143_hybrid_gate.py
+          test -s checkpoint/reference/apple-original/Sources/UnitySurfaceSystem.swift
+      - name: Install Skip and Swift Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install skip
+          swiftly init --skip-install --assume-yes --quiet-shell-followup
+          skip android sdk install 2>&1 | tee skip-hybrid-results/native-sdk.txt
+          skip checkup --native 2>&1 | tee skip-hybrid-results/checkup.txt
+      - name: Create and populate both original-source modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          skip init --no-build --transpiled-model signal-unity-lite SignalUnityLite 2>&1 | tee skip-hybrid-results/init-lite.txt
+          skip init --no-build --native-model signal-player-fuse SignalPlayerFuse 2>&1 | tee skip-hybrid-results/init-fuse.txt
+          python3 checkpoint/tools/real_f143_hybrid_gate.py --checkpoint-root checkpoint --lite-project signal-unity-lite --fuse-project signal-player-fuse --diagnostics skip-hybrid-results
+      - name: Convert real Unity Swift with Skip Lite
+        shell: bash
+        run: |
+          set -o pipefail
+          (cd signal-unity-lite && skip verify) 2>&1 | tee skip-hybrid-results/lite-verify.txt
+      - name: Compile real Swift policy with Skip Fuse
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          if [ -d signal-player-fuse ]; then
+            (cd signal-player-fuse && skip verify) 2>&1 | tee skip-hybrid-results/fuse-verify.txt
+          else
+            echo "Fuse project not created" | tee skip-hybrid-results/fuse-verify.txt
+            exit 1
+          fi
+      - name: Index generated outputs
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p skip-hybrid-results
+          find signal-unity-lite signal-player-fuse -type f \( -name '*.kt' -o -name '*.java' -o -name '*.so' \) -print > skip-hybrid-results/output-index.txt 2>/dev/null || true
+          echo "This run is a real-source conversion test, not an integrated Signal APK." > skip-hybrid-results/README.txt
+      - name: Upload conversion diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Signal-F143-Real-Skip-Hybrid-Results
+          path: skip-hybrid-results/
+          if-no-files-found: warn
