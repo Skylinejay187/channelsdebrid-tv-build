@@ -60,13 +60,17 @@ jobs:
         run: |
           set -o pipefail
           brew install skip 2>&1 | tee skip-diagnostics/install.txt
-          skip checkup 2>&1 | tee skip-diagnostics/checkup.txt
+          # Homebrew installs swiftly but does not initialize its per-user state on fresh CI runners.
+          # Skip's own CI uses noninteractive swiftly initialization before checkup.
+          swiftly init --skip-install --assume-yes --quiet-shell-followup 2>&1 | tee skip-diagnostics/swiftly-init.txt
+          swiftly --version 2>&1 | tee skip-diagnostics/swiftly-version.txt
+          skip checkup --verbose 2>&1 | tee skip-diagnostics/checkup.txt
 
       - name: Create isolated transpiled model and insert real Unity Swift
         shell: bash
         run: |
           set -euo pipefail
-          skip init --transpiled-model signal-unity-probe SignalUnityProbe | tee skip-diagnostics/init.txt
+          skip init --transpiled-model signal-unity-probe SignalUnityProbe 2>&1 | tee skip-diagnostics/init.txt
           mkdir -p signal-unity-probe/Sources/SignalUnityProbe
           cp extracted/reference/apple-original/Sources/UnitySurfaceSystem.swift signal-unity-probe/Sources/SignalUnityProbe/UnitySurfaceSystem.swift
           python3 - <<'PY'
