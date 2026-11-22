@@ -4,9 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - '**.zip'
-      - '.github/workflows/**.yml'
-      - '.github/workflows/**.yaml'
+      - 'Signal_AndroidTV_Checkpoint_*.zip'
 
 jobs:
   build-apk-from-zip:
@@ -102,17 +100,38 @@ jobs:
           grep -q '^android.enableJetifier=true' gradle.properties || echo 'android.enableJetifier=true' >> gradle.properties
           grep -q '^org.gradle.jvmargs=' gradle.properties || echo 'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' >> gradle.properties
 
-      - name: Build debug APK
+      - name: Build debug APK (retry only Maven 429 download rate limits)
         shell: bash
         run: |
           set -euo pipefail
           cd "${{ steps.gradle_root.outputs.root }}"
           if [ -f ./gradlew ]; then
             chmod +x ./gradlew
-            ./gradlew assembleDebug --stacktrace
+            COMMAND=(./gradlew)
           else
-            gradle assembleDebug --stacktrace
+            COMMAND=(gradle)
           fi
+          for attempt in 1 2 3 4; do
+            echo "Gradle build attempt $attempt"
+            set +e
+            "${COMMAND[@]}" assembleDebug --stacktrace --max-workers=2 --no-daemon > gradle-attempt.log 2>&1
+            result=$?
+            set -e
+            tail -n 100 gradle-attempt.log
+            if [ "$result" -eq 0 ]; then
+              echo "APK build succeeded"
+              exit 0
+            fi
+            if [ "$attempt" -eq 4 ]; then
+              echo "::error::Gradle build failed after 4 attempts"
+              exit "$result"
+            fi
+            if ! grep -Eq '(status code 429|HTTP 429|Too Many Requests)' gradle-attempt.log; then
+              echo "::error::Non-rate-limit Gradle compilation failure; not retrying"
+              exit "$result"
+            fi
+            sleep $((attempt * 30))
+          done
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
