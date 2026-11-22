@@ -10,14 +10,13 @@ permissions:
   contents: read
 
 jobs:
-  skip-unity-gate:
+  skip-original-apple-unity:
     runs-on: macos-15
     timeout-minutes: 50
     steps:
-      - name: Check out Signal ZIP repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Find latest Signal checkpoint ZIP
+      - name: Locate latest checkpoint
         id: checkpoint
         shell: bash
         run: |
@@ -25,63 +24,83 @@ jobs:
           ZIP="$(find . -maxdepth 2 -type f -name 'Signal_AndroidTV_Checkpoint_*.zip' | sort -V | tail -1)"
           test -n "$ZIP"
           echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
-          echo "Selected $ZIP"
+          echo "ZIP selected: $ZIP"
 
-      - name: Extract original Swift Unity reference
+      - name: Extract and authenticate ORIGINAL Apple Swift
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p signal-source skip-diagnostics
-          unzip -oq "${{ steps.checkpoint.outputs.zip }}" -d signal-source
-          for name in UnitySurfaceSystem UnitySurfaceLifecycleCoordinator UnityAnimationCoordinator; do
-            test -s "signal-source/reference/tvos-unity/${name}.swift"
-          done
-          shasum -a 256 signal-source/reference/tvos-unity/*.swift | tee skip-diagnostics/source-hashes.txt
+          mkdir -p extracted skip-diagnostics
+          unzip -oq "${{ steps.checkpoint.outputs.zip }}" -d extracted
+          python3 - <<'PY'
+          import json, hashlib, pathlib
+          root=pathlib.Path("extracted")
+          manifest=root/"reference/apple-original-manifest.json"
+          if not manifest.exists():
+              raise SystemExit("STOP: checkpoint lacks original Apple Swift and source provenance. Upload Checkpoint 49+.")
+          m=json.loads(manifest.read_text())
+          assert m["swift_file_count"] >= 200, "Missing Apple Swift files"
+          for rel, expected in m["files"].items():
+              actual=hashlib.sha256((root/rel).read_bytes()).hexdigest()
+              if actual != expected:
+                  raise SystemExit("Original Apple source mismatch: "+rel)
+          for name in ("UnitySurfaceSystem.swift","UnitySurfaceLifecycleCoordinator.swift","UnityAnimationCoordinator.swift","UnityAppCore.swift","UnityFrameRuntime.swift"):
+              p=root/"reference/apple-original/Sources"/name
+              assert p.is_file(), f"Missing real Swift file: {p}"
+          (pathlib.Path("skip-diagnostics")/"source-verification.txt").write_text(
+              "Verified original Swift file count: "+str(len(m["files"]))+"\n"+
+              "Uploaded Apple master ZIP SHA256: "+m["apple_master_sha256"]+"\n"+
+              "Swift source root: reference/apple-original/Sources/\n"
+          )
+          print("Verified",len(m["files"]),"actual Apple Swift files")
+          PY
 
-      - name: Install Skip Lite toolchain
+      - name: Install Skip Lite
         shell: bash
         run: |
           set -o pipefail
           brew install skip 2>&1 | tee skip-diagnostics/install.txt
+          skip checkup 2>&1 | tee skip-diagnostics/checkup.txt
 
-      - name: Check Skip prerequisites
+      - name: Create isolated transpiled model and insert real Unity Swift
+        shell: bash
+        run: |
+          set -euo pipefail
+          skip init --transpiled-model signal-unity-probe SignalUnityProbe | tee skip-diagnostics/init.txt
+          mkdir -p signal-unity-probe/Sources/SignalUnityProbe
+          cp extracted/reference/apple-original/Sources/UnitySurfaceSystem.swift signal-unity-probe/Sources/SignalUnityProbe/UnitySurfaceSystem.swift
+          python3 - <<'PY'
+          import pathlib,re
+          s=pathlib.Path("extracted/reference/apple-original/Sources/CatalogStore.swift").read_text()
+          m=re.search(r'enum AppTab:\s*String,\s*CaseIterable,\s*Identifiable\s*\{[^}]*\}',s,re.S)
+          if not m: raise SystemExit("Could not locate the real AppTab definition")
+          pathlib.Path("signal-unity-probe/Sources/SignalUnityProbe/AppTab.swift").write_text("import Foundation\n"+m.group(0)+"\n")
+          print("Inserted original UnitySurfaceSystem.swift and real AppTab definition into Skip Lite model")
+          PY
+          shasum -a 256 signal-unity-probe/Sources/SignalUnityProbe/*.swift | tee skip-diagnostics/probe-source-hashes.txt
+
+      - name: Verify actual Apple Unity policy in Skip Lite
         shell: bash
         run: |
           set -o pipefail
-          skip version 2>&1 | tee skip-diagnostics/version.txt
-          skip doctor 2>&1 | tee skip-diagnostics/doctor.txt
+          (cd signal-unity-probe && skip verify) 2>&1 | tee skip-diagnostics/verify-original-unity.txt
 
-      - name: Generate isolated Skip Lite transpiled library
-        shell: bash
-        run: |
-          set -o pipefail
-          skip init --transpiled-model signal-unity-probe SignalUnityProbe 2>&1 | tee skip-diagnostics/init.txt
-
-      - name: Verify generated Skip library
-        shell: bash
-        run: |
-          set -o pipefail
-          ( cd signal-unity-probe && skip verify ) 2>&1 | tee skip-diagnostics/verify.txt
-
-      - name: Record accurate test scope
+      - name: Scope and limitations
         if: always()
         shell: bash
         run: |
           mkdir -p skip-diagnostics
-          cat > skip-diagnostics/README.txt <<'EOF'
-          Signal Unity Skip Gate:
-          1. Extracts the original Swift Unity references from the uploaded checkpoint ZIP.
-          2. Checks macOS Skip installation and creates a clean Skip Lite model.
-          3. Verifies that clean model can build.
-          This is NOT a transpilation of Signal's existing Unity classes.
-          Do not claim UI parity or a new Android APK from this workflow.
-          Follow-up: isolate Swift Unity policy into a compatible Skip model and compare generated Kotlin.
+          cat > skip-diagnostics/SCOPE.txt <<'EOF'
+          This gate verifies the complete original Swift-source manifest from the uploaded F143 archive,
+          and attempts to transpile the original UnitySurfaceSystem.swift plus the original AppTab enum.
+          It DOES NOT yet translate the full SwiftUI catalog views, tvOS-only APIs, 3D graphics, or playback.
+          skip verify failure is a genuine compatibility failure to fix, not a successful port.
           EOF
 
-      - name: Upload diagnostics
+      - name: Upload Skip diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Signal-Skip-Unification-Diagnostics
+          name: Signal-Skip-Original-Apple-Unity-Diagnostics
           path: skip-diagnostics/
           if-no-files-found: warn
