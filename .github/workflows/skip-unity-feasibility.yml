@@ -1,0 +1,87 @@
+name: Skip Unity Feasibility (macOS)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Signal_AndroidTV_Checkpoint_*.zip'
+
+permissions:
+  contents: read
+
+jobs:
+  skip-unity-gate:
+    runs-on: macos-15
+    timeout-minutes: 50
+    steps:
+      - name: Check out Signal ZIP repository
+        uses: actions/checkout@v4
+
+      - name: Find latest Signal checkpoint ZIP
+        id: checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP="$(find . -maxdepth 2 -type f -name 'Signal_AndroidTV_Checkpoint_*.zip' | sort -V | tail -1)"
+          test -n "$ZIP"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+          echo "Selected $ZIP"
+
+      - name: Extract original Swift Unity reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p signal-source skip-diagnostics
+          unzip -oq "${{ steps.checkpoint.outputs.zip }}" -d signal-source
+          for name in UnitySurfaceSystem UnitySurfaceLifecycleCoordinator UnityAnimationCoordinator; do
+            test -s "signal-source/reference/tvos-unity/${name}.swift"
+          done
+          shasum -a 256 signal-source/reference/tvos-unity/*.swift | tee skip-diagnostics/source-hashes.txt
+
+      - name: Install Skip Lite toolchain
+        shell: bash
+        run: |
+          set -o pipefail
+          brew install skip 2>&1 | tee skip-diagnostics/install.txt
+
+      - name: Check Skip prerequisites
+        shell: bash
+        run: |
+          set -o pipefail
+          skip version 2>&1 | tee skip-diagnostics/version.txt
+          skip doctor 2>&1 | tee skip-diagnostics/doctor.txt
+
+      - name: Generate isolated Skip Lite transpiled library
+        shell: bash
+        run: |
+          set -o pipefail
+          skip init --transpiled-model signal-unity-probe SignalUnityProbe 2>&1 | tee skip-diagnostics/init.txt
+
+      - name: Verify generated Skip library
+        shell: bash
+        run: |
+          set -o pipefail
+          ( cd signal-unity-probe && skip verify ) 2>&1 | tee skip-diagnostics/verify.txt
+
+      - name: Record accurate test scope
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p skip-diagnostics
+          cat > skip-diagnostics/README.txt <<'EOF'
+          Signal Unity Skip Gate:
+          1. Extracts the original Swift Unity references from the uploaded checkpoint ZIP.
+          2. Checks macOS Skip installation and creates a clean Skip Lite model.
+          3. Verifies that clean model can build.
+          This is NOT a transpilation of Signal's existing Unity classes.
+          Do not claim UI parity or a new Android APK from this workflow.
+          Follow-up: isolate Swift Unity policy into a compatible Skip model and compare generated Kotlin.
+          EOF
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Signal-Skip-Unification-Diagnostics
+          path: skip-diagnostics/
+          if-no-files-found: warn
