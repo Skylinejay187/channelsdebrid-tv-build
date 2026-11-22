@@ -1,0 +1,183 @@
+name: Signal F143 Full-Source Skip Fuse Android App
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_zip:
+        description: F143 full-source ZIP in the repository root
+        required: false
+        default: Signal_F143_Full_Source_Fuse_Attempt.zip
+        type: string
+  push:
+    branches: [main, master]
+    paths:
+      - 'Signal_F143_Full_Source_Fuse_Attempt*.zip'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signal-f143-fuse-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  convert-f143-app:
+    name: Compile original F143 SwiftUI app for Android
+    runs-on: macos-15
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout uploaded source archive
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17 for Android build
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Locate and validate F143 archive
+        shell: bash
+        env:
+          REQUESTED_ZIP: ${{ inputs.source_zip || 'Signal_F143_Full_Source_Fuse_Attempt.zip' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/f143-fuse-results" "$GITHUB_WORKSPACE/f143-fuse-export"
+          SOURCE_ZIP="$REQUESTED_ZIP"
+          if [ ! -f "$SOURCE_ZIP" ]; then
+            SOURCE_ZIP="$(find . -maxdepth 1 -type f -name 'Signal_F143_Full_Source_Fuse_Attempt*.zip' | sort | tail -n 1)"
+          fi
+          if [ -z "$SOURCE_ZIP" ] || [ ! -s "$SOURCE_ZIP" ]; then
+            echo "::error::Upload Signal_F143_Full_Source_Fuse_Attempt.zip to the repository root."
+            exit 1
+          fi
+          unzip -tq "$SOURCE_ZIP" > f143-fuse-results/zip-integrity.txt
+          echo "SOURCE_ZIP=$SOURCE_ZIP" >> "$GITHUB_ENV"
+          echo "CHECKPOINT_DIR=$GITHUB_WORKSPACE/f143-checkpoint" >> "$GITHUB_ENV"
+          echo "RESULTS_DIR=$GITHUB_WORKSPACE/f143-fuse-results" >> "$GITHUB_ENV"
+          echo "EXPORT_DIR=$GITHUB_WORKSPACE/f143-fuse-export" >> "$GITHUB_ENV"
+          echo "Using source ZIP: $SOURCE_ZIP"
+
+      - name: Extract and check every original F143 production source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$CHECKPOINT_DIR"
+          unzip -oq "$SOURCE_ZIP" -d "$CHECKPOINT_DIR"
+          test -s "$CHECKPOINT_DIR/reference/apple-original/Sources/DebridChannelsTVOSApp.swift"
+          test -s "$CHECKPOINT_DIR/reference/apple-original/Sources/UnitySurfaceSystem.swift"
+          test -s "$CHECKPOINT_DIR/reference/apple-original-manifest.json"
+          test -s "$CHECKPOINT_DIR/tools/full_f143_source_gate.py"
+          test -s "$CHECKPOINT_DIR/tools/full_f143_fuse_compile.py"
+          python3 "$CHECKPOINT_DIR/tools/full_f143_source_gate.py" \
+            --root "$CHECKPOINT_DIR/reference/apple-original/Sources" \
+            --output "$RESULTS_DIR/source-inventory" | tee "$RESULTS_DIR/source-check.txt"
+
+      - name: Install Skip and native Swift Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install skip
+          swiftly init --skip-install --assume-yes --quiet-shell-followup
+          skip version 2>&1 | tee "$RESULTS_DIR/skip-version.txt"
+          skip android sdk install 2>&1 | tee "$RESULTS_DIR/android-sdk-install.txt"
+          # Avoid gating on skip checkup's unrelated sample app.
+          skip doctor --native > "$RESULTS_DIR/skip-doctor.txt" 2>&1 || true
+
+      - name: Create real Skip Fuse APPLICATION (not native-model library)
+        shell: bash
+        run: |
+          set -euo pipefail
+          skip init --no-build --native-app \
+            --appid=com.debridchannels.signal \
+            signal-f143-fuse SignalF143Fuse 2>&1 | tee "$RESULTS_DIR/skip-init-app.txt"
+          test -d signal-f143-fuse/Android
+          test -d signal-f143-fuse/Sources/SignalF143Fuse
+          test -f signal-f143-fuse/Skip.env
+          find signal-f143-fuse -maxdepth 3 -type f | sort > "$RESULTS_DIR/created-app-files.txt"
+
+      - name: Add the complete original F143 Swift production sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$CHECKPOINT_DIR/tools/full_f143_fuse_compile.py" \
+            --checkpoint-root "$CHECKPOINT_DIR" \
+            --skip-project signal-f143-fuse \
+            --diagnostics "$RESULTS_DIR" | tee "$RESULTS_DIR/staging.txt"
+          test -s signal-f143-fuse/Sources/SignalF143Fuse/F143Original/DebridChannelsTVOSApp.swift
+          test -s signal-f143-fuse/Sources/SignalF143Fuse/F143Original/UnitySurfaceSystem.swift
+
+      - name: COMPILE full original SwiftUI application and export Android APK
+        id: compile
+        shell: bash
+        run: |
+          set +e
+          (cd signal-f143-fuse && skip export --debug --dir "$EXPORT_DIR") \
+            > "$RESULTS_DIR/whole-app-compile.txt" 2>&1
+          result=$?
+          echo "$result" > "$RESULTS_DIR/whole-app-exit-code.txt"
+          echo "exit_code=$result" >> "$GITHUB_OUTPUT"
+          echo "Skip Fuse full-application export exit code: $result"
+          tail -n 120 "$RESULTS_DIR/whole-app-compile.txt"
+          exit 0
+
+      - name: Extract actual compiler errors and find built APK
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/f143-fuse-results"
+          if [ -f "$GITHUB_WORKSPACE/f143-fuse-results/whole-app-compile.txt" ]; then
+            grep -nEi '(^|[[:space:]])error:|cannot find|no such module|failed|unsupported' \
+              "$GITHUB_WORKSPACE/f143-fuse-results/whole-app-compile.txt" \
+              | head -n 250 > "$GITHUB_WORKSPACE/f143-fuse-results/compiler-errors-first250.txt" || true
+          fi
+          find "$GITHUB_WORKSPACE/f143-fuse-export" "$GITHUB_WORKSPACE/signal-f143-fuse/Android" \
+            -type f \( -name '*.apk' -o -name '*.aab' \) -print \
+            > "$GITHUB_WORKSPACE/f143-fuse-results/apk-paths.txt" 2>/dev/null || true
+          {
+            echo '## Signal F143 whole-application conversion'
+            echo 'Original source is retained under F143Original.'
+            echo 'This workflow uses --native-app and attempts skip export, not --native-model.'
+            echo "Compile exit code: $(cat "$GITHUB_WORKSPACE/f143-fuse-results/whole-app-exit-code.txt" 2>/dev/null || echo NOT_REACHED)"
+            echo '### APK paths (if any)'
+            cat "$GITHUB_WORKSPACE/f143-fuse-results/apk-paths.txt"
+            echo '### First compiler errors'
+            head -n 40 "$GITHUB_WORKSPACE/f143-fuse-results/compiler-errors-first250.txt" 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload full-source compiler evidence regardless of failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Signal-F143-Fuse-App-Compiler-Evidence
+          path: f143-fuse-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload new Skip Fuse Android APK only if genuinely built
+        if: steps.compile.outputs.exit_code == '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Signal-F143-Fuse-Android-APK
+          path: |
+            f143-fuse-export/**/*.apk
+            signal-f143-fuse/Android/**/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: Fail when original app did not compile
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s f143-fuse-results/whole-app-exit-code.txt || {
+            echo "::error::The original application compilation was not reached. See compiler evidence artifact."
+            exit 1
+          }
+          test "$(cat f143-fuse-results/whole-app-exit-code.txt)" = 0 || {
+            echo "::error::Original F143 does not compile yet. Read compiler-errors-first250.txt."
+            exit 1
+          }
+          test -s f143-fuse-results/apk-paths.txt || {
+            echo "::error::Skip returned success but produced no Android APK."
+            exit 1
+          }
