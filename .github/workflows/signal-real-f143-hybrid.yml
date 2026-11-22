@@ -98,9 +98,9 @@ jobs:
         shell: bash
         run: |
           mkdir -p skip-hybrid-results
-          find signal-unity-lite signal-player-fuse skip-hybrid-results/lite-export skip-hybrid-results/fuse-export \\
-            -type f \\( -name '*.kt' -o -name '*.java' -o -name '*.so' -o -name '*.aar' \\) -print > skip-hybrid-results/output-index.txt 2>/dev/null || true
-          find signal-unity-lite/.build signal-player-fuse/.build -type f \\( -name '*.kt' -o -name '*.java' -o -name '*.so' -o -name '*.aar' \\) -print >> skip-hybrid-results/output-index.txt 2>/dev/null || true
+          find signal-unity-lite signal-player-fuse skip-hybrid-results/lite-export skip-hybrid-results/fuse-export \
+            -type f \( -name '*.kt' -o -name '*.java' -o -name '*.so' -o -name '*.aar' \) -print > skip-hybrid-results/output-index.txt 2>/dev/null || true
+          find signal-unity-lite/.build signal-player-fuse/.build -type f \( -name '*.kt' -o -name '*.java' -o -name '*.so' -o -name '*.aar' \) -print >> skip-hybrid-results/output-index.txt 2>/dev/null || true
           sort -u skip-hybrid-results/output-index.txt -o skip-hybrid-results/output-index.txt
           cat > skip-hybrid-results/README.txt <<'EOF'
           REAL F143 source compilation gate, not a verification-only test.
