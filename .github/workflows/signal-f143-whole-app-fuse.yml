@@ -143,8 +143,8 @@ jobs:
             --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \
             --report "$RESULTS_DIR/known-f143-visibility-edits.json"
           edits=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["applied_change_count"])' "$RESULTS_DIR/known-f143-visibility-edits.json")
-          test "$edits" -eq 12 || {
-            echo "::error::Expected 12 verified bridge edits; got $edits. Inspect original code and fixture."
+          test "$edits" -eq 13 || {
+            echo "::error::Expected 13 verified bridge edits; got $edits. Inspect original code and fixture."
             exit 1
           }
           echo "Applied $edits source-grounded compatibility changes to temporary Swift files"
