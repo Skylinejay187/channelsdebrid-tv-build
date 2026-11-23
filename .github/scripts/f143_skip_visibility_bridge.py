@@ -1,92 +1,103 @@
 #!/usr/bin/env python3
-"""Patch only Skip-reported private SwiftUI bridge visibility errors.
+"""Apply minimal Android Skip visibility edits to temporary F143 SwiftUI sources.
 
-Edits are restricted to staged Swift copies in the GitHub runner.
-The original uploaded F143 ZIP is never changed.
+Only compiler-reported files/views are touched. When an originally private View is
+promoted to internal, its own wrapped state is promoted at the same time because
+Skip's bridge requires that too. NEVER edits the original F143 ZIP.
 """
 import argparse
 import json
-from pathlib import Path
 import re
-import sys
+from pathlib import Path
 
 p = argparse.ArgumentParser()
-p.add_argument("--log", type=Path, required=True)
-p.add_argument("--source-root", type=Path, required=True)
-p.add_argument("--report", type=Path, required=True)
-args = p.parse_args()
-if not args.log.is_file() or not args.source_root.is_dir():
-    sys.exit("Skip compiler log or staged source directory missing")
+p.add_argument('--log', type=Path, required=True)
+p.add_argument('--source-root', type=Path, required=True)
+p.add_argument('--report', type=Path, required=True)
+a = p.parse_args()
+if not a.log.is_file() or not a.source_root.is_dir():
+    p.error('Missing compiler log or staged F143 Swift source directory')
 
-log = args.log.read_text(encoding="utf-8", errors="replace")
-error_re = re.compile(
+log = a.log.read_text(encoding='utf-8', errors='replace')
+rx = re.compile(
     r"(?m)^.*?/(?P<file>[A-Za-z0-9_./-]+\.swift):(?P<line>\d+):(?P<column>\d+): error: "
     r"(?P<error>Private state property '(?P<field>[^']+)' cannot be bridged to Android"
     r"|Private views cannot be bridged to Android)"
 )
-by_file = {}
-root = args.source_root.resolve()
-for m in error_re.finditer(log):
-    candidates = list(root.rglob(Path(m.group("file")).name))
+root = a.source_root.resolve()
+matched = list(rx.finditer(log))
+errors_by_file = {}
+for m in matched:
+    candidates = list(root.rglob(Path(m.group('file')).name))
     if len(candidates) != 1:
+        continue  # fail closed for ambiguous duplicate source names
+    f = candidates[0].resolve()
+    if not f.is_relative_to(root):
         continue
-    file = candidates[0].resolve()
-    if not file.is_relative_to(root):
-        continue
-    by_file.setdefault(file, []).append(
-        (int(m.group("line")), m.group("field"), m.group("error"))
-    )
+    errors_by_file.setdefault(f, []).append({
+        'line': int(m.group('line')),
+        'field': m.group('field'),
+        'error': m.group('error'),
+    })
 
+wrapped_state = re.compile(
+    r'^\s*@(?:State|FocusState|StateObject|ObservedObject|EnvironmentObject|Binding|GestureState|AppStorage|SceneStorage)\b'
+    r'[^\n]*\bprivate\s+var\s+(?P<name>[A-Za-z_][A-Za-z_0-9]*)\b'
+)
+view_decl = re.compile(r'^\s*private\s+(?:struct|final\s+class|class)\s+[A-Za-z_][A-Za-z_0-9]*\s*:\s*[^\n]*\bView\b')
+toplevel = re.compile(r'^(?:(?:public|private|internal|fileprivate|open|final)\s+)*(?:struct|class|enum|extension|actor|protocol)\s+\w+')
 changes = []
-for path, errors in by_file.items():
-    original = path.read_text(encoding="utf-8")
-    lines = original.splitlines(keepends=True)
-    for line_number, field, error in sorted(set(errors)):
-        if field is not None:
-            field_re = re.compile(
-                r"^\s*@(?:State|FocusState|StateObject|ObservedObject|EnvironmentObject|Binding)\b"
-                r"[^\n]*?\bprivate\s+var\s+" + re.escape(field) + r"\b"
-            )
-            matches = [
-                i for i, line in enumerate(lines)
-                if line_number - 1 <= i < line_number + 280 and field_re.search(line)
-            ]
-            if not matches:
-                continue
-            i = min(matches)
-            before = lines[i]
-            lines[i] = before.replace("private var ", "var ", 1)
-            if before != lines[i]:
-                changes.append({
-                    "file": str(path.relative_to(root)), "line": i + 1,
-                    "type": "private_state", "property": field,
-                    "before": before.strip(), "after": lines[i].strip()
-                })
-        else:
-            for i in range(max(0, line_number - 3), min(len(lines), line_number + 3)):
-                before = lines[i]
-                if (re.match(r"^\s*private\s+(?:struct|final\s+class|class)\s+", before)
-                        and re.search(r"\bView\b", before)):
-                    lines[i] = re.sub(r"^(\s*)private\s+", r"\1", before, count=1)
-                    changes.append({
-                        "file": str(path.relative_to(root)), "line": i + 1,
-                        "type": "private_view", "before": before.strip(),
-                        "after": lines[i].strip()
-                    })
+for f, errors in errors_by_file.items():
+    lines = f.read_text(encoding='utf-8').splitlines(keepends=True)
+    touched = set()
+
+    def apply(i, category, why):
+        old = lines[i]
+        new = old.replace('private var ', 'var ', 1) if category == 'wrapped_state' else re.sub(r'^(\s*)private\s+', r'\1', old, count=1)
+        if old == new or i in touched:
+            return False
+        lines[i] = new
+        touched.add(i)
+        changes.append({'file': str(f.relative_to(root)), 'line': i + 1, 'type': category,
+                        'reason': why, 'before': old.strip(), 'after': new.strip()})
+        return True
+
+    for err in errors:
+        origin = err['line'] - 1
+        if err['field']:
+            # Skip anchors a property error to the enclosing View declaration,
+            # not necessarily to the declaration of the wrapped property.
+            for i in range(max(0, origin), min(len(lines), origin + 500)):
+                m = wrapped_state.match(lines[i])
+                if m and m.group('name') == err['field']:
+                    apply(i, 'wrapped_state', 'compiler reported private state')
                     break
-    updated = "".join(lines)
-    if updated != original:
-        path.write_text(updated, encoding="utf-8")
+        else:
+            for i in range(max(0, origin - 2), min(len(lines), origin + 3)):
+                if not view_decl.match(lines[i]):
+                    continue
+                if apply(i, 'view_visibility', 'compiler reported private View'):
+                    # This View is newly bridge-visible. Expose only its own
+                    # wrapped state now to avoid an extra compile/retry cycle.
+                    stop = len(lines)
+                    for k in range(i + 1, len(lines)):
+                        if toplevel.match(lines[k]):
+                            stop = k
+                            break
+                    for k in range(i + 1, stop):
+                        if wrapped_state.match(lines[k]):
+                            apply(k, 'wrapped_state', 'state within newly exposed View')
+                break
+    if touched:
+        f.write_text(''.join(lines), encoding='utf-8')
 
 result = {
-    "policy": "Only staged Swift files patched in runner; original F143 ZIP untouched",
-    "reported_visibility_errors": len(list(error_re.finditer(log))),
-    "applied_change_count": len(changes),
-    "changes": changes
+    'reported_visibility_errors': len(matched),
+    'applied_change_count': len(changes),
+    'source_archive_modified': False,
+    'changes': changes,
 }
-args.report.parent.mkdir(parents=True, exist_ok=True)
-args.report.write_text(json.dumps(result, indent=2) + "\n")
-print(json.dumps({
-    "reported_visibility_errors": result["reported_visibility_errors"],
-    "applied_change_count": result["applied_change_count"]
-}))
+a.report.parent.mkdir(parents=True, exist_ok=True)
+a.report.write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
+print(json.dumps({'reported_visibility_errors': len(matched),
+                  'applied_change_count': len(changes)}, indent=2))
