@@ -67,11 +67,19 @@ for f, errors in errors_by_file.items():
         if err['field']:
             # Skip anchors a property error to the enclosing View declaration,
             # not necessarily to the declaration of the wrapped property.
-            for i in range(max(0, origin), min(len(lines), origin + 500)):
-                m = wrapped_state.match(lines[i])
-                if m and m.group('name') == err['field']:
-                    apply(i, 'wrapped_state', 'compiler reported private state')
-                    break
+            # Skip reports the enclosing View's starting line, which can be
+            # thousands of lines above its @State/@FocusState declaration.
+            # Resolve by exact property name across the staged file. If a
+            # name is ambiguous, decline to modify rather than patching the
+            # wrong component; log the ambiguity for manual compatibility work.
+            matches = [
+                i for i, line in enumerate(lines)
+                if (m := wrapped_state.match(line)) and m.group('name') == err['field']
+            ]
+            if len(matches) == 1:
+                apply(matches[0], 'wrapped_state', 'compiler reported unique private state')
+            elif len(matches) > 1:
+                print(f"Ambiguous private state {err['field']} in {f.name}: {len(matches)} declarations")
         else:
             for i in range(max(0, origin - 2), min(len(lines), origin + 3)):
                 if not view_decl.match(lines[i]):
