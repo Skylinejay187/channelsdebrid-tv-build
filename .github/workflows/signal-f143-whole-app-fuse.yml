@@ -8,6 +8,15 @@ on:
         required: false
         default: Signal_F143_Full_Source_Fuse_Attempt.zip
         type: string
+      runner:
+        description: GitHub macOS runner pool (use another if one is unavailable)
+        required: false
+        default: macos-15-intel
+        type: choice
+        options:
+          - macos-15-intel
+          - macos-26-intel
+          - macos-latest
   push:
     branches: [main, master]
     paths:
@@ -21,12 +30,12 @@ permissions:
 
 concurrency:
   group: signal-f143-fuse-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   convert-f143-app:
     name: Compile original F143 SwiftUI app for Android
-    runs-on: macos-15
+    runs-on: ${{ inputs.runner || 'macos-15-intel' }}
     timeout-minutes: 180
 
     steps:
