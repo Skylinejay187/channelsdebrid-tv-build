@@ -121,6 +121,34 @@ jobs:
           grep -q 'RootView()' signal-f143-fuse/Sources/SignalF143Fuse/ContentView.swift
           grep -q 'environmentObject(unityCore)' signal-f143-fuse/Sources/SignalF143Fuse/ContentView.swift
 
+      - name: Apply nine proven F143 Skip bridge diagnostics before first full compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Diagnostic text is copied from the 2026-11-22 actual Skip 1.9.21 compiler log.
+          # Changes apply ONLY to staged runner files, never the uploaded F143 ZIP.
+          cat > "$RESULTS_DIR/known-f143-visibility-errors.txt" <<'EOF'
+          /staged/F143Original/Phase15FinalIntegration.swift:28:1: error: Private state property 'selectedSeason' cannot be bridged to Android
+          /staged/F143Original/Phase15FinalIntegration.swift:28:1: error: Private state property 'preparedRows' cannot be bridged to Android
+          /staged/F143Original/Phase15FinalIntegration.swift:28:1: error: Private state property 'preparedSeasons' cannot be bridged to Android
+          /staged/F143Original/Phase15FinalIntegration.swift:246:1: error: Private views cannot be bridged to Android
+          /staged/F143Original/Phase15FinalIntegration.swift:282:1: error: Private views cannot be bridged to Android
+          /staged/F143Original/Phase15FinalIntegration.swift:452:1: error: Private state property 'closeFocused' cannot be bridged to Android
+          /staged/F143Original/Phase15FinalIntegration.swift:551:1: error: Private views cannot be bridged to Android
+          /staged/F143Original/Phase15FinalIntegration.swift:657:1: error: Private views cannot be bridged to Android
+          /staged/F143Original/Phase15FinalIntegration.swift:690:1: error: Private state property 'focusedAction' cannot be bridged to Android
+          EOF
+          python3 .github/scripts/f143_skip_visibility_bridge.py \
+            --log "$RESULTS_DIR/known-f143-visibility-errors.txt" \
+            --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \
+            --report "$RESULTS_DIR/known-f143-visibility-edits.json"
+          edits=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["applied_change_count"])' "$RESULTS_DIR/known-f143-visibility-edits.json")
+          test "$edits" -eq 12 || {
+            echo "::error::Expected 12 verified bridge edits; got $edits. Inspect original code and fixture."
+            exit 1
+          }
+          echo "Applied $edits source-grounded compatibility changes to temporary Swift files"
+
       - name: Compile F143 and auto-repair only compiler-reported SwiftUI visibility blockers
         id: compile
         shell: bash
