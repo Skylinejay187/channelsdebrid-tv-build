@@ -90,8 +90,13 @@ jobs:
         run: |
           set -euo pipefail
           brew install skip
-          swiftly init --skip-install --assume-yes --quiet-shell-followup
+          # Homebrew installed Skip 1.9.7 while the built-in doctor reported
+          # 1.9.21 available. Update before creating the Fuse app so its
+          # Package.swift resolves dependencies from the current toolchain.
+          skip version > "$RESULTS_DIR/skip-version-before.txt" 2>&1
+          skip upgrade 2>&1 | tee "$RESULTS_DIR/skip-upgrade.txt"
           skip version 2>&1 | tee "$RESULTS_DIR/skip-version.txt"
+          swiftly init --skip-install --assume-yes --quiet-shell-followup
           skip android sdk install 2>&1 | tee "$RESULTS_DIR/android-sdk-install.txt"
           # Avoid gating on skip checkup's unrelated sample app.
           skip doctor --native > "$RESULTS_DIR/skip-doctor.txt" 2>&1 || true
