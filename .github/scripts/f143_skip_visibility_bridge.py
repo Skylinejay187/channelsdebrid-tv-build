@@ -74,9 +74,20 @@ for f, errors in errors_by_file.items():
             # declaration containing the reported position.
             declarations = [i for i, line in enumerate(lines) if toplevel.match(line)]
             preceding = [i for i in declarations if i <= origin]
-            start = preceding[-1] if preceding else 0
             following = [i for i in declarations if i > origin]
-            end = following[0] if following else len(lines)
+            # Skip may report an error at an attribute such as @MainActor
+            # immediately BEFORE the View declaration, instead of on its
+            # struct line. Treat that one-line annotation as belonging to
+            # the upcoming declaration, not to the previous type.
+            upcoming = following[0] if following else None
+            before_next = lines[origin].strip() if 0 <= origin < len(lines) else ''
+            if (upcoming is not None and upcoming - origin <= 3
+                    and before_next.startswith('@')):
+                start = upcoming
+                end = following[1] if len(following) > 1 else len(lines)
+            else:
+                start = preceding[-1] if preceding else 0
+                end = following[0] if following else len(lines)
             matches = [
                 i for i in range(start, end)
                 if (m := wrapped_state.match(lines[i])) and m.group('name') == err['field']
