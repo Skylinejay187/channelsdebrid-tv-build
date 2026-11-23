@@ -90,12 +90,26 @@ jobs:
         run: |
           set -euo pipefail
           brew install skip
-          # Homebrew installed Skip 1.9.7 while the built-in doctor reported
-          # 1.9.21 available. Update before creating the Fuse app so its
-          # Package.swift resolves dependencies from the current toolchain.
+          # GitHub's Homebrew bottle was Skip 1.9.7 even though skip upgrade
+          # reported 1.9.21. The latter did not replace the CLI on PATH.
+          # Install the official Skip GitHub release directly, and enforce
+          # the actual executable version before spending runner minutes.
           skip version > "$RESULTS_DIR/skip-version-before.txt" 2>&1
-          skip upgrade 2>&1 | tee "$RESULTS_DIR/skip-upgrade.txt"
+          SKIP_RELEASE=1.9.21
+          SKIP_BIN_DIR="$RUNNER_TEMP/skip-release/skip.artifactbundle/bin"
+          mkdir -p "$RUNNER_TEMP/skip-release"
+          curl --fail --location --retry 3 --silent --show-error \
+            "https://github.com/skiptools/skip/releases/download/${SKIP_RELEASE}/skip-macos.zip" \
+            --output "$RUNNER_TEMP/skip-release.zip"
+          unzip -oq "$RUNNER_TEMP/skip-release.zip" -d "$RUNNER_TEMP/skip-release"
+          test -x "$SKIP_BIN_DIR/skip" || chmod +x "$SKIP_BIN_DIR/skip"
+          test -x "$SKIP_BIN_DIR/skip"
+          echo "$SKIP_BIN_DIR" >> "$GITHUB_PATH"
+          export PATH="$SKIP_BIN_DIR:$PATH"
+          hash -r
+          type -a skip > "$RESULTS_DIR/skip-cli-paths.txt"
           skip version 2>&1 | tee "$RESULTS_DIR/skip-version.txt"
+          python3 -c 'import os,re,subprocess,sys; v=subprocess.check_output(["skip","version"],text=True); m=re.search(r"\\b(\\d+)\\.(\\d+)\\.(\\d+)\\b",v); assert m and tuple(map(int,m.groups())) >= (1,9,21), f"Skip CLI remained stale: {v.strip()}"'
           swiftly init --skip-install --assume-yes --quiet-shell-followup
           skip android sdk install 2>&1 | tee "$RESULTS_DIR/android-sdk-install.txt"
           # Avoid gating on skip checkup's unrelated sample app.
