@@ -44,7 +44,7 @@ wrapped_state = re.compile(
     r'^\s*@(?:State|FocusState|StateObject|ObservedObject|EnvironmentObject|Binding|GestureState|AppStorage|SceneStorage|Environment)\b'
     r'[^\n]*\bprivate\s+var\s+(?P<name>[A-Za-z_][A-Za-z_0-9]*)\b'
 )
-view_decl = re.compile(r'^\s*private\s+(?:struct|final\s+class|class)\s+[A-Za-z_][A-Za-z_0-9]*\s*:\s*[^\n]*\b(?:View|ViewModifier)\b')
+view_decl = re.compile(r'^\s*private\s+(?:struct|final\s+class|class)\s+[A-Za-z_][A-Za-z_0-9]*(?:<[^\n]*>)?\s*:\s*[^\n]*\b(?:View|ViewModifier)\b')
 toplevel = re.compile(r'^(?:(?:public|private|internal|fileprivate|open|final)\s+)*(?:struct|class|enum|extension|actor|protocol)\s+\w+')
 changes = []
 for f, errors in errors_by_file.items():
