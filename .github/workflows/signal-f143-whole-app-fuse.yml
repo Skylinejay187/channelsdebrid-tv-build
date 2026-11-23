@@ -164,7 +164,7 @@ jobs:
         run: |
           set +e
           compiled=1
-          max_passes=12
+          max_passes=40
           for pass in $(seq 1 "$max_passes"); do
             echo "::group::F143 full-source Skip Fuse compile attempt $pass of $max_passes"
             log="$RESULTS_DIR/whole-app-compile-attempt-$pass.txt"
