@@ -44,7 +44,7 @@ wrapped_state = re.compile(
     r'^\s*@(?:State|FocusState|StateObject|ObservedObject|EnvironmentObject|Binding|GestureState|AppStorage|SceneStorage|Environment)\b'
     r'[^\n]*\bprivate\s+var\s+(?P<name>[A-Za-z_][A-Za-z_0-9]*)\b'
 )
-view_decl = re.compile(r'^\s*private\s+(?:struct|final\s+class|class)\s+[A-Za-z_][A-Za-z_0-9]*\s*:\s*[^\n]*\bView\b')
+view_decl = re.compile(r'^\s*private\s+(?:struct|final\s+class|class)\s+[A-Za-z_][A-Za-z_0-9]*\s*:\s*[^\n]*\b(?:View|ViewModifier)\b')
 toplevel = re.compile(r'^(?:(?:public|private|internal|fileprivate|open|final)\s+)*(?:struct|class|enum|extension|actor|protocol)\s+\w+')
 changes = []
 for f, errors in errors_by_file.items():
@@ -76,7 +76,7 @@ for f, errors in errors_by_file.items():
             for i in range(max(0, origin - 2), min(len(lines), origin + 3)):
                 if not view_decl.match(lines[i]):
                     continue
-                if apply(i, 'view_visibility', 'compiler reported private View'):
+                if apply(i, 'view_visibility', 'compiler reported private SwiftUI view or modifier'):
                     # This View is newly bridge-visible. Expose only its own
                     # wrapped state now to avoid an extra compile/retry cycle.
                     stop = len(lines)
