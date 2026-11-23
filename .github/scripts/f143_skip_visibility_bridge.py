@@ -41,7 +41,7 @@ for m in matched:
     })
 
 wrapped_state = re.compile(
-    r'^\s*@(?:State|FocusState|StateObject|ObservedObject|EnvironmentObject|Binding|GestureState|AppStorage|SceneStorage)\b'
+    r'^\s*@(?:State|FocusState|StateObject|ObservedObject|EnvironmentObject|Binding|GestureState|AppStorage|SceneStorage|Environment)\b'
     r'[^\n]*\bprivate\s+var\s+(?P<name>[A-Za-z_][A-Za-z_0-9]*)\b'
 )
 view_decl = re.compile(r'^\s*private\s+(?:struct|final\s+class|class)\s+[A-Za-z_][A-Za-z_0-9]*\s*:\s*[^\n]*\bView\b')
