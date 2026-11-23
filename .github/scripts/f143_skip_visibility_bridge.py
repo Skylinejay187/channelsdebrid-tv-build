@@ -67,19 +67,25 @@ for f, errors in errors_by_file.items():
         if err['field']:
             # Skip anchors a property error to the enclosing View declaration,
             # not necessarily to the declaration of the wrapped property.
-            # Skip reports the enclosing View's starting line, which can be
-            # thousands of lines above its @State/@FocusState declaration.
-            # Resolve by exact property name across the staged file. If a
-            # name is ambiguous, decline to modify rather than patching the
-            # wrong component; log the ambiguity for manual compatibility work.
+            # Skip often reports the first line of a huge enclosing View
+            # rather than the property's own declaration. Property names such
+            # as "focused" repeat in different Views, so a file-wide lookup
+            # cannot safely choose one. Restrict matching to the top-level
+            # declaration containing the reported position.
+            declarations = [i for i, line in enumerate(lines) if toplevel.match(line)]
+            preceding = [i for i in declarations if i <= origin]
+            start = preceding[-1] if preceding else 0
+            following = [i for i in declarations if i > origin]
+            end = following[0] if following else len(lines)
             matches = [
-                i for i, line in enumerate(lines)
-                if (m := wrapped_state.match(line)) and m.group('name') == err['field']
+                i for i in range(start, end)
+                if (m := wrapped_state.match(lines[i])) and m.group('name') == err['field']
             ]
             if len(matches) == 1:
-                apply(matches[0], 'wrapped_state', 'compiler reported unique private state')
-            elif len(matches) > 1:
-                print(f"Ambiguous private state {err['field']} in {f.name}: {len(matches)} declarations")
+                apply(matches[0], 'wrapped_state', 'compiler reported state in enclosing SwiftUI declaration')
+            elif len(matches) != 1:
+                print(f"Unresolved private state {err['field']} in {f.name} "
+                      f"at {err['line']}: {len(matches)} matches within lines {start+1}-{end}")
         else:
             for i in range(max(0, origin - 2), min(len(lines), origin + 3)):
                 if not view_decl.match(lines[i]):
