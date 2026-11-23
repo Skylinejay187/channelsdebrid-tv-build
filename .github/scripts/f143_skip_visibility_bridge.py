@@ -88,6 +88,29 @@ for f, errors in errors_by_file.items():
                         if wrapped_state.match(lines[k]):
                             apply(k, 'wrapped_state', 'state within newly exposed View')
                 break
+    # A promoted wrapped-state property's declared type must be at least as
+    # visible as the property. Swift rejects e.g. internal @FocusState var
+    # focusedAction: Action? when Action is a nested private enum.
+    promoted_state_lines = [
+        change['line'] - 1 for change in changes
+        if change['file'] == str(f.relative_to(root))
+        and change['type'] == 'wrapped_state'
+    ]
+    for i in promoted_state_lines:
+        m = re.search(r'\bvar\s+\w+\s*:\s*(?P<type>[A-Za-z_][A-Za-z_0-9]*)', lines[i])
+        if not m:
+            continue
+        name = m.group('type')
+        enclosing = max((j for j in range(i + 1) if toplevel.match(lines[j])), default=-1)
+        if enclosing < 0:
+            continue
+        stop = next((j for j in range(i + 1, len(lines)) if toplevel.match(lines[j])), len(lines))
+        rx_private_type = re.compile(r'^\s+private\s+(?:enum|struct|class|typealias)\s+' + re.escape(name) + r'\b')
+        for j in range(enclosing + 1, stop):
+            if rx_private_type.match(lines[j]):
+                apply(j, 'nested_type_visibility', f'promoted SwiftUI state references private type {name}')
+                break
+
     if touched:
         f.write_text(''.join(lines), encoding='utf-8')
 
