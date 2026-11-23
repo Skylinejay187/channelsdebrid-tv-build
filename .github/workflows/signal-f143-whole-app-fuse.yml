@@ -6,7 +6,7 @@ on:
       source_zip:
         description: F143 full-source ZIP in the repository root
         required: false
-        default: Signal_F143_Full_Source_Fuse_Attempt.zip
+        default: Signal_F143_DISC_TICKET_EPG_Fuse_Android_Conversion.zip
         type: string
       runner:
         description: GitHub macOS runner pool (use another if one is unavailable)
@@ -20,7 +20,7 @@ on:
   push:
     branches: [main, master]
     paths:
-      - 'Signal_F143_Full_Source_Fuse_Attempt*.zip'
+      - 'Signal_F143_DISC_TICKET_EPG_Fuse_Android_Conversion*.zip'
       - '.github/workflows/signal-f143-whole-app-fuse.yml'
       - '.github/scripts/f143_skip_visibility_bridge.py'
       - '.github/scripts/f143_wire_unity_root.py'
@@ -51,16 +51,16 @@ jobs:
       - name: Locate and validate F143 archive
         shell: bash
         env:
-          REQUESTED_ZIP: ${{ inputs.source_zip || 'Signal_F143_Full_Source_Fuse_Attempt.zip' }}
+          REQUESTED_ZIP: ${{ inputs.source_zip || 'Signal_F143_DISC_TICKET_EPG_Fuse_Android_Conversion.zip' }}
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/f143-fuse-results" "$GITHUB_WORKSPACE/f143-fuse-export"
           SOURCE_ZIP="$REQUESTED_ZIP"
           if [ ! -f "$SOURCE_ZIP" ]; then
-            SOURCE_ZIP="$(find . -maxdepth 1 -type f -name 'Signal_F143_Full_Source_Fuse_Attempt*.zip' | sort | tail -n 1)"
+            SOURCE_ZIP="$(find . -maxdepth 1 -type f -name 'Signal_F143_DISC_TICKET_EPG_Fuse_Android_Conversion*.zip' | sort | tail -n 1)"
           fi
           if [ -z "$SOURCE_ZIP" ] || [ ! -s "$SOURCE_ZIP" ]; then
-            echo "::error::Upload Signal_F143_Full_Source_Fuse_Attempt.zip to the repository root."
+            echo "::error::Upload Signal_F143_DISC_TICKET_EPG_Fuse_Android_Conversion.zip to the repository root."
             exit 1
           fi
           unzip -tq "$SOURCE_ZIP" > f143-fuse-results/zip-integrity.txt
