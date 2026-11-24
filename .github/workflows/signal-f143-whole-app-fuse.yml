@@ -28,6 +28,7 @@ on:
       - '.github/scripts/f143_android_native_import_guard.py'
       - '.github/scripts/f143_android_catalog_framework_bridge.py'
       - '.github/scripts/f143_platform_import_audit.py'
+      - '.github/scripts/f143_android_coil_artwork_bridge.py'
       - '.github/scripts/f143_skip_fuse_ui_button_bridge.py'
 
 permissions:
@@ -180,6 +181,20 @@ jobs:
           result=json.load(open(sys.argv[1]))
           print("Platform compatibility review:",result["files_requiring_platform_review"],"files;",result["flagged_imports"],"imports")
           PY
+
+      - name: Replace Kingfisher with Android Coil-backed SwiftUI artwork adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/f143_android_coil_artwork_bridge.py \
+            --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \
+            --report "$RESULTS_DIR/android-coil-artwork-bridge.json"
+          swiftc -frontend -parse \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/RemoteImageFit.swift \
+            > "$RESULTS_DIR/android-coil-artwork-parse.txt" 2>&1
+          test -s "$RESULTS_DIR/android-coil-artwork-bridge.json"
+          grep -Fq '#if canImport(Kingfisher) && canImport(UIKit)' \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/RemoteImageFit.swift
 
       - name: Wire real Signal F143 Unity RootView into Android app entry
         shell: bash
