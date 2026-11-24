@@ -182,7 +182,7 @@ jobs:
             --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \
             --report "$RESULTS_DIR/aether-apple-bridge-guard.json"
           test -s "$RESULTS_DIR/aether-apple-bridge-guard.json"
-          head -n 1 signal-f143-fuse/Sources/SignalF143Fuse/F143Original/AetherPlaybackBridge/AetherPlaybackBridge.swift | grep -Fqx '#if !os(Android)'
+          head -n 1 signal-f143-fuse/Sources/SignalF143Fuse/F143Original/AetherPlaybackBridge/AetherPlaybackBridge.swift | grep -Fqx '#if !TARGET_OS_ANDROID'
       - name: Apply nine proven F143 Skip bridge diagnostics before first full compile
         shell: bash
         run: |
