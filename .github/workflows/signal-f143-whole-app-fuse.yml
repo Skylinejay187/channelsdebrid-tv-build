@@ -27,6 +27,7 @@ on:
       - '.github/scripts/f143_android_apple_framework_guard.py'
       - '.github/scripts/f143_android_native_import_guard.py'
       - '.github/scripts/f143_android_catalog_framework_bridge.py'
+      - '.github/scripts/f143_platform_import_audit.py'
       - '.github/scripts/f143_skip_fuse_ui_button_bridge.py'
 
 permissions:
@@ -164,6 +165,21 @@ jobs:
             --diagnostics "$RESULTS_DIR" | tee "$RESULTS_DIR/staging.txt"
           test -s signal-f143-fuse/Sources/SignalF143Fuse/F143Original/DebridChannelsTVOSApp.swift
           test -s signal-f143-fuse/Sources/SignalF143Fuse/F143Original/UnitySurfaceSystem.swift
+
+      - name: Inventory all Apple-only framework imports before Android compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/f143_platform_import_audit.py \
+            --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \
+            --report-dir "$RESULTS_DIR"
+          test -s "$RESULTS_DIR/platform-import-inventory.csv"
+          test -s "$RESULTS_DIR/platform-import-summary.json"
+          python3 - "$RESULTS_DIR/platform-import-summary.json" <<'PY'
+          import json,sys
+          result=json.load(open(sys.argv[1]))
+          print("Platform compatibility review:",result["files_requiring_platform_review"],"files;",result["flagged_imports"],"imports")
+          PY
 
       - name: Wire real Signal F143 Unity RootView into Android app entry
         shell: bash
