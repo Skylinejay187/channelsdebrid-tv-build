@@ -25,6 +25,7 @@ on:
       - '.github/scripts/f143_skip_visibility_bridge.py'
       - '.github/scripts/f143_wire_unity_root.py'
       - '.github/scripts/f143_android_apple_framework_guard.py'
+      - '.github/scripts/f143_android_native_import_guard.py'
       - '.github/scripts/f143_skip_fuse_ui_button_bridge.py'
 
 permissions:
@@ -189,6 +190,24 @@ jobs:
           swiftc -D TARGET_OS_ANDROID -typecheck \
             signal-f143-fuse/Sources/SignalF143Fuse/F143Original/AetherPlaybackBridge/AetherPlaybackBridge.swift \
             > "$RESULTS_DIR/aether-android-guard-typecheck.txt" 2>&1
+      - name: Guard Apple AetherEngine and Keychain imports in staged Swift sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/f143_android_native_import_guard.py \
+            --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \
+            --report "$RESULTS_DIR/apple-native-import-guards.json"
+          test -s "$RESULTS_DIR/apple-native-import-guards.json"
+          grep -Fq '#if canImport(AetherEngine) && canImport(UIKit)' \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/AetherPlaybackBridge/AetherPlaybackBridge.swift
+          grep -Fq '#if canImport(Security)' \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/BackupStreamingClient.swift
+          # Parsing checks declarations without pulling in Apple-only binaries.
+          swiftc -frontend -parse \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/AetherPlaybackBridge/AetherPlaybackBridge.swift \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/BackupStreamingClient.swift \
+            > "$RESULTS_DIR/native-import-guards-parse.txt" 2>&1
+
       - name: Apply nine proven F143 Skip bridge diagnostics before first full compile
         shell: bash
         run: |
