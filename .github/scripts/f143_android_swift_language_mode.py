@@ -42,7 +42,11 @@ for i in range(start,len(text)):
 if end is None:p.error("Could not find Package closing parenthesis")
 prefix=text[:end].rstrip()
 if not prefix.endswith(","):prefix+=","
-fixed=prefix+"\n    swiftLanguageModes: [.v5]\n"+text[end:]
+tools_version = re.search(r"(?m)^// swift-tools-version:\\s*(\\d+)\\.(\\d+)",text)
+if tools_version is None:p.error("Missing swift-tools-version header")
+major = int(tools_version.group(1))
+field = "swiftLanguageModes" if major >= 6 else "swiftLanguageVersions"
+fixed=prefix+"\n    "+field+": [.v5]\n"+text[end:]
 package.write_text(fixed,encoding="utf-8")
 a.report.parent.mkdir(parents=True,exist_ok=True)
 a.report.write_text(json.dumps({
