@@ -26,6 +26,7 @@ on:
       - '.github/scripts/f143_wire_unity_root.py'
       - '.github/scripts/f143_android_apple_framework_guard.py'
       - '.github/scripts/f143_android_native_import_guard.py'
+      - '.github/scripts/f143_android_catalog_framework_bridge.py'
       - '.github/scripts/f143_skip_fuse_ui_button_bridge.py'
 
 permissions:
@@ -207,6 +208,19 @@ jobs:
             signal-f143-fuse/Sources/SignalF143Fuse/F143Original/AetherPlaybackBridge/AetherPlaybackBridge.swift \
             signal-f143-fuse/Sources/SignalF143Fuse/F143Original/BackupStreamingClient.swift \
             > "$RESULTS_DIR/native-import-guards-parse.txt" 2>&1
+
+      - name: Guard TVServices Top Shelf and AVFoundation catalog validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/f143_android_catalog_framework_bridge.py \
+            --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \
+            --report "$RESULTS_DIR/android-catalog-import-guards.json"
+          swiftc -frontend -parse \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/CatalogStore.swift \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/DebridChannelsTVOSApp.swift \
+            > "$RESULTS_DIR/android-catalog-parse.txt" 2>&1
+          test -s "$RESULTS_DIR/android-catalog-import-guards.json"
 
       - name: Apply nine proven F143 Skip bridge diagnostics before first full compile
         shell: bash
