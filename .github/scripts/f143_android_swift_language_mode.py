@@ -42,7 +42,7 @@ for i in range(start,len(text)):
 if end is None:p.error("Could not find Package closing parenthesis")
 prefix=text[:end].rstrip()
 if not prefix.endswith(","):prefix+=","
-tools_version = re.search(r"(?m)^// swift-tools-version:\\s*(\\d+)\\.(\\d+)",text)
+tools_version = re.search(r"(?m)^\s*//\s*swift-tools-version:\s*(\d+)\.(\d+)",text)
 if tools_version is None:p.error("Missing swift-tools-version header")
 major = int(tools_version.group(1))
 field = "swiftLanguageModes" if major >= 6 else "swiftLanguageVersions"
