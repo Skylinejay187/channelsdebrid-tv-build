@@ -48,6 +48,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Set up Gradle for direct Android APK build
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
       - name: Locate and validate F143 archive
         shell: bash
         env:
@@ -187,15 +192,15 @@ jobs:
           for pass in $(seq 1 "$max_passes"); do
             echo "::group::F143 full-source Skip Fuse compile attempt $pass of $max_passes"
             log="$RESULTS_DIR/whole-app-compile-attempt-$pass.txt"
-            (cd signal-f143-fuse && skip export --android --debug --dir "$EXPORT_DIR") > "$log" 2>&1
+            (cd signal-f143-fuse && gradle -p Android assembleDebug --stacktrace --no-daemon) > "$log" 2>&1
             compiled=$?
             cp "$log" "$RESULTS_DIR/whole-app-compile.txt"
             echo "$compiled" > "$RESULTS_DIR/whole-app-exit-code.txt"
-            echo "Full-source ANDROID-ONLY Skip Fuse export exit code: $compiled"
+            echo "Full-source direct Android Gradle build exit code: $compiled"
             tail -n 70 "$log"
             echo "::endgroup::"
             if [ "$compiled" -eq 0 ]; then
-              echo "Full-source export passed on attempt $pass"
+              echo "Full-source Android Gradle build passed on attempt $pass"
               break
             fi
             if [ "$pass" -eq "$max_passes" ]; then
@@ -227,13 +232,13 @@ jobs:
               "$GITHUB_WORKSPACE/f143-fuse-results/whole-app-compile.txt" \
               | head -n 250 > "$GITHUB_WORKSPACE/f143-fuse-results/compiler-errors-first250.txt" || true
           fi
-          find "$GITHUB_WORKSPACE/f143-fuse-export" "$GITHUB_WORKSPACE/signal-f143-fuse/Android" \
+          find "$GITHUB_WORKSPACE/signal-f143-fuse/Android" "$GITHUB_WORKSPACE/signal-f143-fuse/.build/Android" \
             -type f \( -name '*.apk' -o -name '*.aab' \) -print \
             > "$GITHUB_WORKSPACE/f143-fuse-results/apk-paths.txt" 2>/dev/null || true
           {
             echo '## Signal F143 whole-application conversion'
-            echo 'Original source is retained under F143Original. Android-only export deliberately skips the unnecessary iOS IPA archive.'
-            echo 'This workflow uses --native-app and attempts skip export, not --native-model.'
+            echo 'Original source is retained under F143Original. Direct Android Gradle build avoids the failing iOS IPA archive.'
+            echo 'This workflow uses --native-app and directly invokes the generated Android Gradle project.'
             echo "Compile exit code: $(cat "$GITHUB_WORKSPACE/f143-fuse-results/whole-app-exit-code.txt" 2>/dev/null || echo NOT_REACHED)"
             echo '### APK paths (if any)'
             cat "$GITHUB_WORKSPACE/f143-fuse-results/apk-paths.txt"
@@ -272,8 +277,8 @@ jobs:
         with:
           name: Signal-F143-Fuse-Android-APK
           path: |
-            f143-fuse-export/**/*.apk
-            signal-f143-fuse/Android/**/build/outputs/apk/**/*.apk
+            signal-f143-fuse/Android/**/*.apk
+            signal-f143-fuse/.build/Android/**/*.apk
           if-no-files-found: error
 
       - name: Fail when original app did not compile
