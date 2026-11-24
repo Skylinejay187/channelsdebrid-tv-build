@@ -30,6 +30,8 @@ on:
       - '.github/scripts/f143_platform_import_audit.py'
       - '.github/scripts/f143_classify_native_swift_errors.py'
       - '.github/scripts/f143_android_coil_artwork_bridge.py'
+      - '.github/scripts/f143_android_artwork_runtime_batch.py'
+      - '.github/scripts/f143_android_swift_language_mode.py'
       - '.github/scripts/f143_skip_fuse_ui_button_bridge.py'
 
 permissions:
@@ -196,6 +198,35 @@ jobs:
           test -s "$RESULTS_DIR/android-coil-artwork-bridge.json"
           grep -Fq '#if canImport(Kingfisher) && canImport(UIKit)' \
             signal-f143-fuse/Sources/SignalF143Fuse/F143Original/RemoteImageFit.swift
+
+      - name: Restore Android artwork disk cache and loader compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/f143_android_artwork_runtime_batch.py \
+            --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \
+            --report "$RESULTS_DIR/android-artwork-runtime.json"
+          swiftc -frontend -parse \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/RemoteImageFit.swift \
+            > "$RESULTS_DIR/android-artwork-runtime-parse.txt" 2>&1
+          test -s "$RESULTS_DIR/android-artwork-runtime.json"
+
+      - name: Set staged original Signal module to Swift 5 language compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/f143_android_swift_language_mode.py \
+            --project-root signal-f143-fuse \
+            --report "$RESULTS_DIR/android-swift-language-mode.json"
+          swift package dump-package --package-path signal-f143-fuse \
+            > "$RESULTS_DIR/android-swift-package.json"
+          python3 - "$RESULTS_DIR/android-swift-package.json" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1]))
+          modes=p.get("swiftLanguageModes") or p.get("swiftLanguageVersions")
+          assert modes is not None, "Swift 5 language compatibility missing from manifest"
+          print("Swift language mode:", modes)
+          PY
 
       - name: Wire real Signal F143 Unity RootView into Android app entry
         shell: bash
