@@ -12,6 +12,7 @@ Refuses unknown/upstream changed source layouts.
 import argparse
 import json
 from pathlib import Path
+import stat
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--project-root", type=Path, required=True)
@@ -58,7 +59,14 @@ patched = patched.replace(old,new)
 patched = patched.replace(old_return,new_return)
 if patched.count("Java_labelBridge.value") != 2:
     parser.error("Bridge getter patch did not resolve both label views")
+# SwiftPM checkout source files can be read-only (0444). Preserve other mode
+# bits, grant only owner write permission for this runner-local checkout,
+# then verify the new bytes were actually written.
+original_mode = src.stat().st_mode
+src.chmod(stat.S_IMODE(original_mode) | stat.S_IWUSR)
 src.write_text(patched,encoding="utf-8")
+if src.read_text(encoding="utf-8") != patched:
+    parser.error("SkipFuseUI patch readback did not match; refusing compile")
 args.report.parent.mkdir(parents=True,exist_ok=True)
 args.report.write_text(json.dumps({
     "dependency":"skip-fuse-ui",
