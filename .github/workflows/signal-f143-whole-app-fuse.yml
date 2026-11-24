@@ -28,6 +28,7 @@ on:
       - '.github/scripts/f143_android_native_import_guard.py'
       - '.github/scripts/f143_android_catalog_framework_bridge.py'
       - '.github/scripts/f143_platform_import_audit.py'
+      - '.github/scripts/f143_classify_native_swift_errors.py'
       - '.github/scripts/f143_android_coil_artwork_bridge.py'
       - '.github/scripts/f143_skip_fuse_ui_button_bridge.py'
 
@@ -311,6 +312,16 @@ jobs:
             cp "$log" "$RESULTS_DIR/whole-app-compile.txt"
             echo "$compiled" > "$RESULTS_DIR/whole-app-exit-code.txt"
             echo "Full-source direct Android Gradle build exit code: $compiled"
+            python3 .github/scripts/f143_classify_native_swift_errors.py \
+              --log "$log" \
+              --output "$RESULTS_DIR/native-swift-errors-attempt-$pass.json" || true
+            # tvOS-only SwiftUI remote commands are unavailable to the
+            # native iOS compatibility interfaces used by Skip. A SwiftUI
+            # visibility-only repair cannot resolve those API failures.
+            if grep -Fq 'is unavailable in iOS' "$log"; then
+              echo "::error::tvOS remote-command API mismatch detected; stopping visibility retries."
+              break
+            fi
             echo "::endgroup::"
             if [ "$compiled" -eq 0 ]; then
               echo "Full-source Android Gradle build passed on attempt $pass"
