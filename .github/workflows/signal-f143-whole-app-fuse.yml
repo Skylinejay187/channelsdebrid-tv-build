@@ -187,11 +187,11 @@ jobs:
           for pass in $(seq 1 "$max_passes"); do
             echo "::group::F143 full-source Skip Fuse compile attempt $pass of $max_passes"
             log="$RESULTS_DIR/whole-app-compile-attempt-$pass.txt"
-            (cd signal-f143-fuse && skip export --debug --dir "$EXPORT_DIR") > "$log" 2>&1
+            (cd signal-f143-fuse && skip export --android --debug --dir "$EXPORT_DIR") > "$log" 2>&1
             compiled=$?
             cp "$log" "$RESULTS_DIR/whole-app-compile.txt"
             echo "$compiled" > "$RESULTS_DIR/whole-app-exit-code.txt"
-            echo "Full-source Skip Fuse export exit code: $compiled"
+            echo "Full-source ANDROID-ONLY Skip Fuse export exit code: $compiled"
             tail -n 70 "$log"
             echo "::endgroup::"
             if [ "$compiled" -eq 0 ]; then
@@ -232,7 +232,7 @@ jobs:
             > "$GITHUB_WORKSPACE/f143-fuse-results/apk-paths.txt" 2>/dev/null || true
           {
             echo '## Signal F143 whole-application conversion'
-            echo 'Original source is retained under F143Original.'
+            echo 'Original source is retained under F143Original. Android-only export deliberately skips the unnecessary iOS IPA archive.'
             echo 'This workflow uses --native-app and attempts skip export, not --native-model.'
             echo "Compile exit code: $(cat "$GITHUB_WORKSPACE/f143-fuse-results/whole-app-exit-code.txt" 2>/dev/null || echo NOT_REACHED)"
             echo '### APK paths (if any)'
