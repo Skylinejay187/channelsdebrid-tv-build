@@ -106,8 +106,16 @@ final class PremiumArtworkRehydrationCoordinator {
 """
 # The alternate branch only has one RemoteImageFit after its #else.
 alt_anchor="\nstruct RemoteImageFit: View {\n    enum Mode { case fill, fit, stretch }"
-if text.count(alt_anchor)!=1:p.error("Android alternate RemoteImageFit anchor changed")
-text=text.replace(alt_anchor,"\n"+runtime+alt_anchor,1)
+# The preserved Apple branch can contain the same declaration. Restrict
+# insertion to the Android alternative after the known #else boundary.
+android_boundary = "#else\n\nimport Foundation"
+boundary_at = text.find(android_boundary)
+if boundary_at < 0:p.error("Android Coil alternative branch missing")
+android_section = text[boundary_at:]
+if android_section.count(alt_anchor)!=1:
+    p.error(f"Expected exactly one Android RemoteImageFit anchor; found {android_section.count(alt_anchor)}")
+android_section = android_section.replace(alt_anchor,"\n"+runtime+alt_anchor,1)
+text = text[:boundary_at]+android_section
 # Extend premium loader with bounded network loading, keeping published UIKit
 # image path for SignalDashboardBackdrop and other direct loader consumers.
 old_loader = """        if !preserveCurrentImage { image = nil }
