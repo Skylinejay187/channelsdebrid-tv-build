@@ -52,6 +52,23 @@ jobs:
       - name: Checkout uploaded source archive
         uses: actions/checkout@v4
 
+      - name: Preflight all F143 Android compatibility scripts before expensive tool setup
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            .github/scripts/f143_android_swift_language_mode.py \
+            .github/scripts/f143_android_tv_remote_compat.py \
+            .github/scripts/f143_android_artwork_runtime_batch.py \
+            .github/scripts/f143_android_coil_artwork_bridge.py \
+            .github/scripts/f143_android_catalog_framework_bridge.py \
+            .github/scripts/f143_android_native_import_guard.py \
+            .github/scripts/f143_android_apple_framework_guard.py \
+            .github/scripts/f143_classify_native_swift_errors.py \
+            .github/scripts/f143_skip_visibility_bridge.py \
+            .github/scripts/f143_wire_unity_root.py
+          echo "Compatibility scripts passed Python syntax preflight"
+
       - name: Set up Java 17 for Android build
         uses: actions/setup-java@v4
         with:
