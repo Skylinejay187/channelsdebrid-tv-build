@@ -109,7 +109,7 @@ jobs:
           hash -r
           type -a skip > "$RESULTS_DIR/skip-cli-paths.txt"
           skip version 2>&1 | tee "$RESULTS_DIR/skip-version.txt"
-          python3 -c 'import os,re,subprocess,sys; v=subprocess.check_output(["skip","version"],text=True); m=re.search(r"\\b(\\d+)\\.(\\d+)\\.(\\d+)\\b",v); assert m and tuple(map(int,m.groups())) >= (1,9,21), f"Skip CLI remained stale: {v.strip()}"'
+          python3 -c 'import os,re,subprocess,sys; v=subprocess.check_output(["skip","version"],text=True); m=re.search(r"\b(\d+)\.(\d+)\.(\d+)\b",v); assert m and tuple(map(int,m.groups())) >= (1,9,21), f"Skip CLI remained stale: {v.strip()}"'
           swiftly init --skip-install --assume-yes --quiet-shell-followup
           skip android sdk install 2>&1 | tee "$RESULTS_DIR/android-sdk-install.txt"
           # Avoid gating on skip checkup's unrelated sample app.
