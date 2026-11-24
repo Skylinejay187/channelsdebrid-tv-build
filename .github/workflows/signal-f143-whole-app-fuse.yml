@@ -32,6 +32,7 @@ on:
       - '.github/scripts/f143_android_coil_artwork_bridge.py'
       - '.github/scripts/f143_android_artwork_runtime_batch.py'
       - '.github/scripts/f143_android_swift_language_mode.py'
+      - '.github/scripts/f143_android_tv_remote_compat.py'
       - '.github/scripts/f143_skip_fuse_ui_button_bridge.py'
 
 permissions:
@@ -227,6 +228,19 @@ jobs:
           assert modes is not None, "Swift 5 language compatibility missing from manifest"
           print("Swift language mode:", modes)
           PY
+
+      - name: Stage Android TV native focus and remote API compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/f143_android_tv_remote_compat.py \
+            --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \
+            --report "$RESULTS_DIR/android-tv-remote-compat.json"
+          swiftc -frontend -parse \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/SignalAndroidTVRemoteCompatibility.swift \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/DebridChannelsTVOSApp.swift \
+            > "$RESULTS_DIR/android-tv-remote-parse.txt" 2>&1
+          test -s "$RESULTS_DIR/android-tv-remote-compat.json"
 
       - name: Wire real Signal F143 Unity RootView into Android app entry
         shell: bash
