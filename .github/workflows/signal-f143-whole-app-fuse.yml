@@ -48,10 +48,28 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle for direct Android APK build
+      - name: Set up compatible Gradle for Skip Android Gradle Plugin 9.2
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: '9.4.1'
+
+      - name: Verify actual Gradle version before full source compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --version | tee "$RUNNER_TEMP/gradle-version.txt"
+          python3 - <<'PY'
+          import re
+          import subprocess
+          raw = subprocess.check_output(["gradle", "--version"], text=True)
+          match = re.search(r"(?m)^Gradle\s+(\d+)\.(\d+)(?:\.(\d+))?", raw)
+          if match is None:
+              raise SystemExit(f"Could not determine active Gradle version:\n{raw}")
+          version = tuple(int(x or 0) for x in match.groups())
+          if version < (9, 4, 1):
+              raise SystemExit(f"Skip Android AGP requires Gradle >=9.4.1, got {version}")
+          print(f"Verified compatible Gradle version {version}")
+          PY
 
       - name: Locate and validate F143 archive
         shell: bash
