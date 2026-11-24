@@ -28,6 +28,19 @@ def one(source, before, after, label):
     return source.replace(before, after, 1)
 
 cs = one(cs, "import AVFoundation\n", "#if canImport(AVFoundation)\nimport AVFoundation\n#endif\n", "AVFoundation import")
+cs = one(
+    cs,
+    "import UserNotifications\n",
+    "#if canImport(UserNotifications)\nimport UserNotifications\n#endif\n",
+    "UserNotifications import"
+)
+# The episode alert branch is tvOS-only already, but Android also lacks
+# UserNotifications. Reuse its in-app alert/log path, not an insecure shim
+# that pretends an Android notification was scheduled.
+episode_anchor = "        #if os(tvOS)\n        // tvOS does not expose UNMutableNotificationContent.title/body/sound"
+episode_replacement = "        #if os(tvOS) || !canImport(UserNotifications)\n        // tvOS does not expose UNMutableNotificationContent.title/body/sound"
+cs = one(cs, episode_anchor, episode_replacement, "episode notification platform guard")
+
 original_fn = """    private func trailerFileHasCompleteAudio(_ fileURL: URL) async -> Bool {
         await Task.detached(priority: .utility) {
             let asset = AVURLAsset(url: fileURL)"""
@@ -68,6 +81,8 @@ report = {
     "trailer_audio_android_validated": False,
     "android_trailer_fallback": "reject until Android media validator exists",
     "tvos_top_shelf_guarded": True,
+    "android_notifications_implemented": False,
+    "usernotifications_import_guarded": True,
     "original_f143_zip_modified": False,
 }
 a.report.write_text(json.dumps(report, indent=2)+"\n", encoding="utf-8")
