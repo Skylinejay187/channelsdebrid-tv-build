@@ -48,8 +48,8 @@ holder = """// Nonactor holder for a JNI-provided view reference. This mirrors t
 // upstream nonisolated(unsafe) bridge contract; do not expose to app code.
 // Actor/thread safety must be validated in the Android runtime.
 internal final class _SignalButtonLabelBridge: @unchecked Sendable {
-    nonisolated let value: any SkipUI.View
-    nonisolated init(_ value: any SkipUI.View) { self.value = value }
+    let value: any SkipUI.View
+    init(_ value: any SkipUI.View) { self.value = value }
 }
 
 """
