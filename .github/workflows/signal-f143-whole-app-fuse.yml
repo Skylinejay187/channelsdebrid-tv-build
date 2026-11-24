@@ -233,12 +233,14 @@ jobs:
           for pass in $(seq 1 "$max_passes"); do
             echo "::group::F143 full-source Skip Fuse compile attempt $pass of $max_passes"
             log="$RESULTS_DIR/whole-app-compile-attempt-$pass.txt"
-            (cd signal-f143-fuse && gradle -p Android assembleDebug --stacktrace --no-daemon) > "$log" 2>&1
-            compiled=$?
+            # Stream Gradle output to the Actions log in real time.
+            # Keep the same complete evidence file and preserve Gradle's
+            # original exit code (not tee's).
+            (cd signal-f143-fuse && gradle -p Android assembleDebug --stacktrace --no-daemon --console=plain --info) 2>&1 | tee "$log"
+            compiled=${PIPESTATUS[0]}
             cp "$log" "$RESULTS_DIR/whole-app-compile.txt"
             echo "$compiled" > "$RESULTS_DIR/whole-app-exit-code.txt"
             echo "Full-source direct Android Gradle build exit code: $compiled"
-            tail -n 70 "$log"
             echo "::endgroup::"
             if [ "$compiled" -eq 0 ]; then
               echo "Full-source Android Gradle build passed on attempt $pass"
