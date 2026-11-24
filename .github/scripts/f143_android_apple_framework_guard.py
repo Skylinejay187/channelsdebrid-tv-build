@@ -24,11 +24,11 @@ if not data.startswith(expected):
     sys.exit("Aether bridge imports changed: refusing unchecked transformation")
 if not all(x in data for x in ("class AetherPlaybackHostView: UIView", "AetherEngine")):
     sys.exit("Aether bridge implementation changed: refusing unchecked transformation")
-if data.startswith("#if !os(Android)"):
+if data.startswith("#if !TARGET_OS_ANDROID"):
     sys.exit("Android platform guard already applied unexpectedly")
 # Swift for Android does not provide UIKit, AVFoundation, or AetherEngine.
 # Retain the entire original Apple-only source for tvOS builds.
-source.write_text("#if !os(Android)\n" + data.rstrip("\n") + "\n#endif // !os(Android) — Apple AetherPlaybackBridge\n", encoding="utf-8")
+source.write_text("#if !TARGET_OS_ANDROID\n" + data.rstrip("\n") + "\n#endif // !TARGET_OS_ANDROID — Apple AetherPlaybackBridge\n", encoding="utf-8")
 report = {
     "file": str(source.relative_to(root)),
     "action": "Apple-only file excluded from Android Swift compilation",
