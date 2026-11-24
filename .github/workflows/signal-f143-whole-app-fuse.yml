@@ -294,7 +294,7 @@ jobs:
               echo "Stopping repeated compile attempts for a missing Swift module."
               break
             fi
-            if [ "$pass" -eq "$max_passes" ];
+            if [ "$pass" -eq "$max_passes" ]; then
               echo "::warning::Reached maximum diagnostic-driven patch attempts"
               break
             fi
