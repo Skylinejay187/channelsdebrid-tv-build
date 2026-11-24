@@ -285,7 +285,16 @@ jobs:
               echo "Full-source Android Gradle build passed on attempt $pass"
               break
             fi
-            if [ "$pass" -eq "$max_passes" ]; then
+            # Platform/framework imports cannot be repaired by the SwiftUI
+            # visibility-only patcher. Stop retrying immediately, so the next
+            # actual incompatibility is visible instead of wasting a runner.
+            if grep -Eq "error: no such module ['\x22]" "$log"; then
+              echo "::error::Native Swift Android dependency unavailable (not a visibility error)."
+              grep -E "error: no such module" "$log" | sort -u | head -n 20
+              echo "Stopping repeated compile attempts for a missing Swift module."
+              break
+            fi
+            if [ "$pass" -eq "$max_passes" ];
               echo "::warning::Reached maximum diagnostic-driven patch attempts"
               break
             fi
