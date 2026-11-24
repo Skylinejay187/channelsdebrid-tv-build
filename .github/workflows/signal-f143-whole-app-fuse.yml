@@ -23,6 +23,7 @@ on:
       - 'Signal_F143_DISC_TICKET_EPG_Fuse_Android_Conversion*.zip'
       - '.github/workflows/signal-f143-whole-app-fuse.yml'
       - '.github/scripts/f143_skip_visibility_bridge.py'
+      - '.github/scripts/f143_swift_private_type_bridge.py'
       - '.github/scripts/f143_wire_unity_root.py'
       - '.github/scripts/f143_android_apple_framework_guard.py'
       - '.github/scripts/f143_android_native_import_guard.py'
@@ -65,6 +66,7 @@ jobs:
             .github/scripts/f143_android_native_import_guard.py \
             .github/scripts/f143_android_apple_framework_guard.py \
             .github/scripts/f143_classify_native_swift_errors.py \
+            .github/scripts/f143_swift_private_type_bridge.py \
             .github/scripts/f143_skip_visibility_bridge.py \
             .github/scripts/f143_wire_unity_root.py
           echo "Compatibility scripts passed Python syntax preflight"
@@ -408,7 +410,14 @@ jobs:
               --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \
               --report "$report"
             edits=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["applied_change_count"])' "$report")
-            echo "Targeted compatibility edits: $edits"
+            private_report="$RESULTS_DIR/private-type-patch-attempt-$pass.json"
+            python3 .github/scripts/f143_swift_private_type_bridge.py \
+              --log "$log" \
+              --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \
+              --report "$private_report"
+            private_edits=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["applied_change_count"])' "$private_report")
+            edits=$((edits + private_edits))
+            echo "Targeted compatibility edits: $edits (including $private_edits private-type fixes)"
             if [ "$edits" -eq 0 ]; then
               echo "No known safe automatic fixes remain; preserving real compiler failure"
               break
