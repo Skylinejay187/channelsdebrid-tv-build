@@ -279,6 +279,47 @@ jobs:
             head -n 40 "$GITHUB_WORKSPACE/f143-fuse-results/compiler-errors-first250.txt" 2>/dev/null || true
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Preserve failure cause even if compilation never starts
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          mkdir -p "$GITHUB_WORKSPACE/f143-fuse-results"
+          {
+            echo "=== FULL-SOURCE SKIP F143 RUN ==="
+            echo "GitHub run: $GITHUB_RUN_ID"
+            echo "GitHub attempt: $GITHUB_RUN_ATTEMPT"
+            echo "GitHub SHA: $GITHUB_SHA"
+            echo "Runner OS: $RUNNER_OS"
+            echo "Runner architecture: $RUNNER_ARCH"
+            echo "Job status at diagnostic step: ${{ job.status }}"
+            echo "=== TOOL VERSIONS ==="
+            command -v skip || true
+            skip version || true
+            command -v gradle || true
+            gradle --version | head -n 16 || true
+            command -v swift || true
+            swift --version || true
+            echo "=== SOURCE AND RESULT FILES ==="
+            find "$GITHUB_WORKSPACE/f143-fuse-results" -maxdepth 2 -type f -print | sort
+            echo "=== RECENT COMPILER ERRORS ==="
+            grep -Ei 'error:|FAILURE:|What went wrong:|no such module|could not|failed' \
+              "$GITHUB_WORKSPACE/f143-fuse-results/whole-app-compile.txt" | tail -n 100 || true
+            echo "=== APK CANDIDATES ==="
+            find "$GITHUB_WORKSPACE/signal-f143-fuse" -name '*.apk' -print 2>/dev/null || true
+          } > "$GITHUB_WORKSPACE/f143-fuse-results/run-summary.txt" 2>&1
+          cat "$GITHUB_WORKSPACE/f143-fuse-results/run-summary.txt"
+          {
+            echo "### F143 full-source diagnostic capture"
+            echo "Workflow job status: ${{ job.status }}"
+            if [ -s "$GITHUB_WORKSPACE/f143-fuse-results/whole-app-exit-code.txt" ]; then
+              echo "Android compiler exit: $(cat "$GITHUB_WORKSPACE/f143-fuse-results/whole-app-exit-code.txt")"
+            else
+              echo "Android compiler not reached. Check job steps before 'Compile F143'."
+            fi
+            echo "Diagnostic report: Signal-F143-Fuse-App-Compiler-Evidence artifact, run-summary.txt"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload full-source compiler evidence regardless of failure
         if: always()
         uses: actions/upload-artifact@v4
