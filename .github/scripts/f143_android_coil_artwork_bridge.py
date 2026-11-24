@@ -26,6 +26,9 @@ url_router=data[start:end]
 if "static func url(_ input: String?) -> URL?" not in url_router: p.error("URL router changed")
 alternative=r"""
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import SwiftUI
 
 // Shared routing (including backend image proxy and original TMDB size) is
