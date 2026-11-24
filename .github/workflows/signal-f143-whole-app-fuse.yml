@@ -25,6 +25,7 @@ on:
       - '.github/scripts/f143_skip_visibility_bridge.py'
       - '.github/scripts/f143_wire_unity_root.py'
       - '.github/scripts/f143_android_apple_framework_guard.py'
+      - '.github/scripts/f143_skip_fuse_ui_button_bridge.py'
 
 permissions:
   contents: read
@@ -209,6 +210,18 @@ jobs:
             exit 1
           }
           echo "Applied $edits source-grounded compatibility changes to temporary Swift files"
+
+      - name: Prepare and patch locally checked out SkipFuseUI Button bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift package resolve --package-path signal-f143-fuse 2>&1 | tee "$RESULTS_DIR/swift-package-resolve.txt"
+          python3 .github/scripts/f143_skip_fuse_ui_button_bridge.py \
+            --project-root signal-f143-fuse \
+            --report "$RESULTS_DIR/skip-fuse-ui-button-bridge.json"
+          swiftc -frontend -parse signal-f143-fuse/.build/checkouts/skip-fuse-ui/Sources/SkipSwiftUI/Controls/Button.swift \
+            > "$RESULTS_DIR/button-parse.txt" 2>&1
+          test -s "$RESULTS_DIR/skip-fuse-ui-button-bridge.json"
 
       - name: Compile F143 and auto-repair only compiler-reported SwiftUI visibility blockers
         id: compile
