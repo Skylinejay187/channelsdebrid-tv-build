@@ -24,6 +24,7 @@ on:
       - '.github/workflows/signal-f143-whole-app-fuse.yml'
       - '.github/scripts/f143_skip_visibility_bridge.py'
       - '.github/scripts/f143_swift_private_type_bridge.py'
+      - '.github/scripts/f143_android_final_source_fixes.py'
       - '.github/scripts/f143_wire_unity_root.py'
       - '.github/scripts/f143_android_apple_framework_guard.py'
       - '.github/scripts/f143_android_native_import_guard.py'
@@ -66,6 +67,7 @@ jobs:
             .github/scripts/f143_android_native_import_guard.py \
             .github/scripts/f143_android_apple_framework_guard.py \
             .github/scripts/f143_classify_native_swift_errors.py \
+            .github/scripts/f143_android_final_source_fixes.py \
             .github/scripts/f143_swift_private_type_bridge.py \
             .github/scripts/f143_skip_visibility_bridge.py \
             .github/scripts/f143_wire_unity_root.py
@@ -345,6 +347,19 @@ jobs:
             exit 1
           }
           echo "Applied $edits source-grounded compatibility changes to temporary Swift files"
+
+      - name: Preapply source-checked backdrop and diagnostics type-check fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/f143_android_final_source_fixes.py \
+            --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \
+            --report "$RESULTS_DIR/android-final-source-fixes.json"
+          swiftc -frontend -parse \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/SignalDashboardBackdrop.swift \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/DiagnosticsDeveloperToolsManager.swift \
+            > "$RESULTS_DIR/android-final-source-parse.txt" 2>&1
+          test -s "$RESULTS_DIR/android-final-source-fixes.json"
 
       - name: Prepare and patch locally checked out SkipFuseUI Button bridge
         shell: bash
