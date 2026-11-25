@@ -9,9 +9,11 @@ p.add_argument("--log",required=True,type=Path)
 p.add_argument("--output",required=True,type=Path)
 a=p.parse_args()
 s=a.log.read_text(encoding="utf-8",errors="replace")
+s=re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]","",s)
 pattern=re.compile(r"/F143Original/([^:\n]+\.swift):(\d+):(\d+): error: ([^\n]+)")
 errors=sorted(set((m.group(1),int(m.group(2)),m.group(4)) for m in pattern.finditer(s)))
 categories={
+    "missing platform modules":lambda t: "no such module" in t,
     "tvOS remote input":lambda t: any(x in t for x in ("onMoveCommand","onExitCommand","onPlayPauseCommand","MoveCommandDirection","unavailable in iOS")),
     "Swift concurrency / actor isolation":lambda t: any(x in t for x in ("concurrency-safe","Sendable","actor-isolated","nonisolated")),
     "Swift visibility":lambda t: "fileprivate" in t or "private type" in t,
