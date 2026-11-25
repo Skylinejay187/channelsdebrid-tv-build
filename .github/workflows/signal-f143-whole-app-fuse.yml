@@ -25,6 +25,7 @@ on:
       - '.github/scripts/f143_skip_visibility_bridge.py'
       - '.github/scripts/f143_swift_private_type_bridge.py'
       - '.github/scripts/f143_android_final_source_fixes.py'
+      - '.github/scripts/f143_preflight_source_compat.py'
       - '.github/scripts/f143_wire_unity_root.py'
       - '.github/scripts/f143_android_apple_framework_guard.py'
       - '.github/scripts/f143_android_native_import_guard.py'
@@ -67,6 +68,7 @@ jobs:
             .github/scripts/f143_android_native_import_guard.py \
             .github/scripts/f143_android_apple_framework_guard.py \
             .github/scripts/f143_classify_native_swift_errors.py \
+            .github/scripts/f143_preflight_source_compat.py \
             .github/scripts/f143_android_final_source_fixes.py \
             .github/scripts/f143_swift_private_type_bridge.py \
             .github/scripts/f143_skip_visibility_bridge.py \
@@ -138,6 +140,16 @@ jobs:
           python3 "$CHECKPOINT_DIR/tools/full_f143_source_gate.py" \
             --root "$CHECKPOINT_DIR/reference/apple-original/Sources" \
             --output "$RESULTS_DIR/source-inventory" | tee "$RESULTS_DIR/source-check.txt"
+
+      - name: Dry run all Android Swift source adaptations before Skip installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/f143_preflight_source_compat.py \
+            --original-source "$CHECKPOINT_DIR/reference/apple-original/Sources" \
+            --scripts-dir .github/scripts \
+            --report-dir "$RESULTS_DIR"
+          test -s "$RESULTS_DIR/source-patch-preflight.json"
 
       - name: Install Skip and native Swift Android SDK
         shell: bash
