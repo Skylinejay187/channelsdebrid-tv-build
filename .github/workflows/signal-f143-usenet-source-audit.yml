@@ -1,0 +1,29 @@
+name: Signal F143 Usenet source audit
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/signal-f143-usenet-source-audit.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract original Usenet implementation without changing source
+        run: |
+          python3 - <<'PY'
+          import zipfile, pathlib, hashlib
+          p = pathlib.Path("Signal_F143_DISC_TICKET_EPG_Fuse_Android_Conversion.zip")
+          with zipfile.ZipFile(p) as z:
+              matches = [n for n in z.namelist() if pathlib.PurePosixPath(n).name == "SignalNativeUsenet.swift" and not n.startswith("__MACOSX/")]
+              assert matches, "Source not found"
+              for n in matches:
+                  data = z.read(n)
+                  print(n, hashlib.sha256(data).hexdigest(), flush=True)
+                  text = data.decode("utf-8")
+                  for i, line in enumerate(text.splitlines(), 1):
+                      print(f"{i:05d}: {line}")
+          PY
