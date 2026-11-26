@@ -24,6 +24,8 @@ on:
       - '.github/workflows/signal-f143-whole-app-fuse.yml'
       - '.github/android/PlainHTTPClient.swift'
       - '.github/android/SignalLANTransport.swift'
+      - '.github/android/SignalUsenetAndroidTransport.swift'
+      - '.github/scripts/f143_android_usenet_bridge.py'
       - '.github/scripts/f143_android_lan_bridge.py'
       - '.github/scripts/f143_skip_visibility_bridge.py'
       - '.github/scripts/f143_swift_private_type_bridge.py'
@@ -416,6 +418,15 @@ jobs:
           p.write_text(s)
           PY
           swiftc -swift-version 5 -typecheck signal-f143-fuse/Sources/SignalF143Fuse/F143Original/SignalLANTransport.swift > "$RESULTS_DIR/android-lan-host-typecheck.txt" 2>&1
+          python3 -m py_compile .github/scripts/f143_android_usenet_bridge.py
+          python3 .github/scripts/f143_android_usenet_bridge.py \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original \
+            "$CHECKPOINT_DIR/reference/apple-original/Sources" \
+            signal-f143-fuse/Package.swift
+          swiftc -frontend -parse \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/SignalNativeUsenet.swift \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/SignalUsenetAndroidTransport.swift \
+            > "$RESULTS_DIR/android-usenet-parse.txt" 2>&1
           # Swift Crypto provides the CryptoKit-compatible API on Android.
           python3 - <<'PY'
           from pathlib import Path
