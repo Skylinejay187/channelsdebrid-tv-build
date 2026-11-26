@@ -397,6 +397,45 @@ jobs:
             --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \
             --transport .github/android/SignalLANTransport.swift \
             --report "$RESULTS_DIR/android-lan-bridge.json"
+          # The host Swift build also needs the staged LAN types; use Darwin sockets on macOS.
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("signal-f143-fuse/Sources/SignalF143Fuse/F143Original/SignalLANTransport.swift")
+          s=p.read_text()
+          assert s.startswith("#if !canImport(Network)\n") and s.rstrip().endswith("#endif")
+          s=s.split("\n",1)[1].rstrip().rsplit("#endif",1)[0]
+          def one(old,new):
+              global s
+              assert s.count(old)==1, old
+              s=s.replace(old,new,1)
+          one("import Glibc\n#endif", "import Glibc\n#elseif canImport(Darwin)\nimport Darwin\n#endif")
+          one("return Glibc.send(fd, bytes, count, Int32(MSG_NOSIGNAL))", "#if canImport(Darwin)\n    return Darwin.send(fd, bytes, count, 0)\n#else\n    return Glibc.send(fd, bytes, count, Int32(MSG_NOSIGNAL))\n#endif")
+          one("let d = socket(AF_INET, Int32(SOCK_STREAM.rawValue | SOCK_NONBLOCK.rawValue), 0)", "#if canImport(Darwin)\n        let d = socket(AF_INET, SOCK_STREAM, 0)\n        if d >= 0 { _ = fcntl(d, F_SETFL, O_NONBLOCK) }\n#else\n        let d = socket(AF_INET, Int32(SOCK_STREAM.rawValue | SOCK_NONBLOCK.rawValue), 0)\n#endif")
+          one("addr.sin_port = 0", "addr.sin_port = 0\n#if canImport(Darwin)\n        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)\n#endif")
+          one("var timeout = timeval(tv_sec: 8, tv_usec: 0)", "#if canImport(Darwin)\n                var noSigPipe: Int32 = 1\n                _ = setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))\n#endif\n                var timeout = timeval(tv_sec: 8, tv_usec: 0)")
+          p.write_text(s)
+          PY
+          swiftc -swift-version 5 -typecheck signal-f143-fuse/Sources/SignalF143Fuse/F143Original/SignalLANTransport.swift > "$RESULTS_DIR/android-lan-host-typecheck.txt" 2>&1
+          # Swift Crypto provides the CryptoKit-compatible API on Android.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path("signal-f143-fuse/Package.swift")
+          s=p.read_text()
+          if 'swift-crypto' not in s:
+              s += '\npackage.dependencies.append(.package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"))\n'
+          s += 'package.targets.first(where: { $0.name == "SignalF143Fuse" })!.dependencies.append(.product(name: "Crypto", package: "swift-crypto"))\n'
+          p.write_text(s)
+          changed=[]
+          for file in Path("signal-f143-fuse/Sources/SignalF143Fuse/F143Original").rglob("*.swift"):
+              old=file.read_text()
+              new=re.sub(r'(?m)^([ \t]*)import CryptoKit[ \t]*$', r'\1import Crypto', old)
+              if new != old:
+                  file.write_text(new)
+                  changed.append(str(file))
+          assert changed
+          print("Crypto compatibility:", changed)
+          PY
           swiftc -frontend -parse \
             signal-f143-fuse/Sources/SignalF143Fuse/F143Original/SignalLANTransport.swift \
             signal-f143-fuse/Sources/SignalF143Fuse/F143Original/SignalDiagnosticCenter.swift \
