@@ -11,7 +11,10 @@ def one(old,new):
     global s
     assert s.count(old)==1, (old[:100],s.count(old))
     s=s.replace(old,new,1)
-one("import Network\nimport Security", "#if os(Android)\nimport FoundationXML\nimport SkipKeychain\n#else\nimport Network\nimport Security\n#endif")
+guarded_import = "import Network\n#if canImport(Security)\nimport Security\n#endif"
+plain_import = "import Network\nimport Security"
+assert s.count(guarded_import) + s.count(plain_import) == 1, repr(s[:400])
+one(guarded_import if guarded_import in s else plain_import, "#if os(Android)\nimport FoundationXML\nimport SkipKeychain\n#else\nimport Network\nimport Security\n#endif")
 one("    private static let query:", """#if os(Android)
     static func read() -> Self {
         guard let encoded = try? Keychain.shared.string(forKey: "Signal.NativeUsenet.news-server"),
