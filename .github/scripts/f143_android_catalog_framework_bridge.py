@@ -61,6 +61,21 @@ replacement_end = """            return coverage >= 0.98 && audioEnd >= required
         #endif
     }"""
 cs = one(cs, end_fn, replacement_end, "trailer audio validation end")
+# Guard known Apple-only imports in the entry point as a batch.
+# Do not remove declarations or pretend Android implementations exist.
+import re
+guarded_app_modules = []
+for module in ("AVFoundation", "CoreImage", "CoreVideo", "ImageIO",
+               "MediaPlayer", "QuartzCore", "Security", "UIKit",
+               "UserNotifications"):
+    pattern = r"(?m)^import " + module + r"[ \t]*$"
+    app_source, count = re.subn(
+        pattern, "#if canImport(" + module + ")\nimport " + module + "\n#endif",
+        app_source)
+    if count:
+        guarded_app_modules.append(module)
+if "AVFoundation" not in guarded_app_modules:
+    p.error("Expected AVFoundation import in staged entry point")
 app_source = one(
     app_source,
     "import AVKit\n",
@@ -88,6 +103,7 @@ report = {
     "android_trailer_fallback": "reject until Android media validator exists",
     "tvos_top_shelf_guarded": True,
     "app_avkit_import_guarded": True,
+    "app_batch_guarded_modules": guarded_app_modules,
     "android_notifications_implemented": False,
     "usernotifications_import_guarded": True,
     "original_f143_zip_modified": False,
