@@ -127,6 +127,34 @@ app_source = one(app_source, "import Combine\n",
                  "Combine import")
 catalog.write_text(cs, encoding="utf-8")
 app.write_text(app_source, encoding="utf-8")
+# Batch guard compiler-incompatible Apple imports throughout staged production
+# sources. Keep API call sites intact so unresolved implementations remain
+# visible to the compiler rather than silently dropping features.
+batch_modules = {"UIKit", "Combine", "Security", "AVFoundation", "AVKit",
+                 "CoreImage", "CoreVideo", "ImageIO", "MediaPlayer",
+                 "QuartzCore", "TVServices", "UserNotifications", "Darwin",
+                 "TVVLCKit"}
+batch_imports = []
+import_rx = re.compile(r"^([ \t]*)import[ \t]+([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)[ \t]*$")
+for swift in sorted(root.rglob("*.swift")):
+    original = swift.read_text(encoding="utf-8")
+    lines = original.splitlines(keepends=True)
+    output = []
+    for i, line in enumerate(lines):
+        match = import_rx.fullmatch(line.rstrip("\r\n"))
+        if match and match.group(2).split(".")[0] in batch_modules:
+            indent, module = match.groups()
+            previous = lines[i-1].strip() if i else ""
+            if previous != "#if canImport(" + module + ")":
+                output.extend([indent + "#if canImport(" + module + ")\n",
+                               line if line.endswith("\n") else line + "\n",
+                               indent + "#endif\n"])
+                batch_imports.append({"file": str(swift.relative_to(root)), "module": module})
+                continue
+        output.append(line)
+    updated = "".join(output)
+    if updated != original:
+        swift.write_text(updated, encoding="utf-8")
 a.report.parent.mkdir(parents=True, exist_ok=True)
 report = {
     "status": "staged Swift compatibility patch applied",
@@ -138,6 +166,7 @@ report = {
     "app_combine_import_guarded": True,
     "compiler_29_visibility_edits": visibility_edits,
     "app_batch_guarded_modules": guarded_app_modules,
+    "whole_source_batch_import_guards": batch_imports,
     "android_notifications_implemented": False,
     "usernotifications_import_guarded": True,
     "original_f143_zip_modified": False,
