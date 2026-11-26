@@ -93,6 +93,38 @@ app_source = one(
     "        #if canImport(TVServices)\n        TVTopShelfContentProvider.topShelfContentDidChange()\n        #endif\n",
     "tvOS Top Shelf invalidation"
 )
+# Compiler evidence #29: promote only uniquely identified private types.
+# This preserves their implementation and avoids replaying visibility passes.
+visibility_targets = {
+    app: ("FavoritesAsyncTaskRuntime", "PlaybackUnityCatalogDestination",
+          "MediaInfoAsyncTaskRuntime", "PopupMetadataAsyncTaskRuntime",
+          "LiveTVBoundedArtworkLoader", "LiveTVGridInteractionRuntime",
+          "CatalogOverlayAsyncTaskRuntime", "TrailerAsyncTaskRuntime",
+          "SearchAsyncTaskRuntime", "RootAsyncTaskRuntime",
+          "CatalogRailAsyncTaskRuntime", "LiveTVScreenAsyncTaskRuntime",
+          "AlternateAudioHandoffState", "VODPlayerAsyncTaskRuntime",
+          "LiveTimingDebugInfo", "SignalFramePacingMonitor",
+          "NuvioPluginSettingsTarget", "DetailPageAsyncTaskRuntime"),
+    root / "Phase15FinalIntegration.swift": ("Phase15EpisodeBrowserRow",),
+}
+visibility_edits = []
+for path, names in visibility_targets.items():
+    source = app_source if path == app else path.read_text(encoding="utf-8")
+    for name in names:
+        pattern = r"(?m)^([ \t]*)private[ \t]+((?:final[ \t]+)?(?:class|struct|enum|actor|typealias)[ \t]+" + re.escape(name) + r"\b)"
+        matches = list(re.finditer(pattern, source))
+        if len(matches) == 1:
+            source = re.sub(pattern, r"\1\2", source, count=1)
+            visibility_edits.append(name)
+    if path == app:
+        app_source = source
+    else:
+        path.write_text(source, encoding="utf-8")
+# Guard the unavailable Combine import; actual reactive API references must
+# still compile against Skip or a real Android implementation.
+app_source = one(app_source, "import Combine\n",
+                 "#if canImport(Combine)\nimport Combine\n#endif\n",
+                 "Combine import")
 catalog.write_text(cs, encoding="utf-8")
 app.write_text(app_source, encoding="utf-8")
 a.report.parent.mkdir(parents=True, exist_ok=True)
@@ -103,6 +135,8 @@ report = {
     "android_trailer_fallback": "reject until Android media validator exists",
     "tvos_top_shelf_guarded": True,
     "app_avkit_import_guarded": True,
+    "app_combine_import_guarded": True,
+    "compiler_29_visibility_edits": visibility_edits,
     "app_batch_guarded_modules": guarded_app_modules,
     "android_notifications_implemented": False,
     "usernotifications_import_guarded": True,
