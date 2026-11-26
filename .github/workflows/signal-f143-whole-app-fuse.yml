@@ -23,6 +23,8 @@ on:
       - 'Signal_F143_DISC_TICKET_EPG_Fuse_Android_Conversion*.zip'
       - '.github/workflows/signal-f143-whole-app-fuse.yml'
       - '.github/android/PlainHTTPClient.swift'
+      - '.github/android/SignalLANTransport.swift'
+      - '.github/scripts/f143_android_lan_bridge.py'
       - '.github/scripts/f143_skip_visibility_bridge.py'
       - '.github/scripts/f143_swift_private_type_bridge.py'
       - '.github/scripts/f143_android_final_source_fixes.py'
@@ -388,6 +390,20 @@ jobs:
           print("Applied native Android HTTP adapter to staged source")
           PY
           swiftc -swift-version 5 -typecheck signal-f143-fuse/Sources/SignalF143Fuse/F143Original/PlainHTTPClient.swift > "$RESULTS_DIR/android-http-typecheck.txt" 2>&1
+          # Port both local TCP services without modifying the archived Apple sources.
+          python3 -m py_compile .github/scripts/f143_android_lan_bridge.py
+          python3 .github/scripts/f143_android_lan_bridge.py \
+            --original-source "$CHECKPOINT_DIR/reference/apple-original/Sources" \
+            --source-root signal-f143-fuse/Sources/SignalF143Fuse/F143Original \
+            --transport .github/android/SignalLANTransport.swift \
+            --report "$RESULTS_DIR/android-lan-bridge.json"
+          swiftc -frontend -parse \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/SignalLANTransport.swift \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/SignalDiagnosticCenter.swift \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/SignalPhoneSetupServer.swift \
+            signal-f143-fuse/Sources/SignalF143Fuse/F143Original/SignalProtectedNetworkState.swift \
+            > "$RESULTS_DIR/android-lan-parse.txt" 2>&1
+          test -s "$RESULTS_DIR/android-lan-bridge.json"
           # Bundle SQLite from source for the Android Swift target.
           python3 - <<'PY'
           from pathlib import Path
