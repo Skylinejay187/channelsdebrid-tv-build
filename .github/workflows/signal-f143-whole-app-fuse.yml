@@ -421,7 +421,7 @@ jobs:
             # Platform/framework imports cannot be repaired by the SwiftUI
             # visibility-only patcher. Stop retrying immediately, so the next
             # actual incompatibility is visible instead of wasting a runner.
-            if grep -Fq 'error: no such module' "$log"; then
+            if python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("counts", {}).get("missing platform modules", 0) else 1)' "$RESULTS_DIR/native-swift-errors-attempt-$pass.json" || grep -Fq 'error: no such module' "$log"; then
               echo "::error::Native Swift Android dependency unavailable (not a visibility error)."
               grep -E "error: no such module" "$log" | sort -u | head -n 20
               echo "Stopping repeated compile attempts for a missing Swift module."
