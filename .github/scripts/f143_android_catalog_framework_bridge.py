@@ -63,6 +63,12 @@ replacement_end = """            return coverage >= 0.98 && audioEnd >= required
 cs = one(cs, end_fn, replacement_end, "trailer audio validation end")
 app_source = one(
     app_source,
+    "import AVKit\n",
+    "#if canImport(AVKit)\nimport AVKit\n#endif\n",
+    "Apple AVKit import"
+)
+app_source = one(
+    app_source,
     "import TVServices\n",
     "#if canImport(TVServices)\nimport TVServices\n#endif\n",
     "tvOS Top Shelf import")
@@ -81,6 +87,7 @@ report = {
     "trailer_audio_android_validated": False,
     "android_trailer_fallback": "reject until Android media validator exists",
     "tvos_top_shelf_guarded": True,
+    "app_avkit_import_guarded": True,
     "android_notifications_implemented": False,
     "usernotifications_import_guarded": True,
     "original_f143_zip_modified": False,
