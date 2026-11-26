@@ -68,12 +68,12 @@ guarded_app_modules = []
 for module in ("AVFoundation", "CoreImage", "CoreVideo", "ImageIO",
                "MediaPlayer", "QuartzCore", "Security", "UIKit",
                "UserNotifications"):
-    pattern = r"(?m)^import " + module + r"[ \t]*$"
-    app_source, count = re.subn(
-        pattern, "#if canImport(" + module + ")\nimport " + module + "\n#endif",
-        app_source)
-    if count:
-        guarded_app_modules.append(module)
+    pattern = r"(?m)^import (" + re.escape(module) + r"(?:\.[A-Za-z_]\w*)*)[ \t]*$"
+    def guard_import(match):
+        full_module = match.group(1)
+        guarded_app_modules.append(full_module)
+        return "#if canImport(" + full_module + ")\nimport " + full_module + "\n#endif"
+    app_source = re.sub(pattern, guard_import, app_source)
 if "AVFoundation" not in guarded_app_modules:
     p.error("Expected AVFoundation import in staged entry point")
 app_source = one(
