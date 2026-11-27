@@ -17,12 +17,12 @@ jobs:
           python3 - <<'PY'
           import zipfile, pathlib, hashlib
           p = pathlib.Path("Signal_F143_DISC_TICKET_EPG_Fuse_Android_Conversion.zip")
-          names = {"UnityAppCore.swift", "SignalSearchGlyph.swift", "SignalSearchSpotlight.swift", "SignalSportsOnlinePlayer.swift", "SignalTopMenuVisuals.swift"}
+          names = {"UnityAppCore.swift", "SignalSearchGlyph.swift", "SignalSearchSpotlight.swift", "SignalSportsOnlinePlayer.swift", "SignalTopMenuVisuals.swift", "SignalNativeUsenet.swift"}
           out = pathlib.Path("compatibility-source")
           out.mkdir()
           with zipfile.ZipFile(p) as z:
               for name in sorted(names):
-                  matches = [n for n in z.namelist() if pathlib.PurePosixPath(n).name == name and not n.startswith("__MACOSX/")]
+                  matches = [n for n in z.namelist() if n == "reference/apple-original/Sources/" + name]
                   assert len(matches) == 1, (name, matches)
                   data = z.read(matches[0])
                   (out / name).write_bytes(data)
