@@ -117,10 +117,22 @@ if "struct " in panel[len(marker):]:
 d=d[:index]+view
 backdrop.write_text(b,encoding="utf-8")
 diagnostic.write_text(d,encoding="utf-8")
+
+# The preview namespace is unused by the actual tab renderer. SkipFuseUI
+# explicitly marks Namespace.init unavailable; retain the identical static
+# preview by using the renderer's existing optional nil namespace.
+menu=root/"SignalTopMenuVisuals.swift"
+m=menu.read_text(encoding="utf-8")
+if m.count("    @Namespace private var previewSelection\n")!=1 or m.count("selectionNamespace: previewSelection")!=1 or m.count("previewSelection")!=2 or m.count("selectionNamespace")!=2 or "var selectionNamespace: Namespace.ID? = nil" not in m:
+    p.error("Top menu preview namespace usage changed; refusing unchecked repair")
+m=m.replace("    @Namespace private var previewSelection\n","",1).replace("selectionNamespace: previewSelection","selectionNamespace: nil",1)
+menu.write_text(m,encoding="utf-8")
+
 a.report.parent.mkdir(parents=True,exist_ok=True)
 a.report.write_text(json.dumps({
  "backdrop_owner_visibility":"internal",
  "diagnostics_view":"split into heading/note/rows/empty components",
+ "top_menu_preview_namespace":"removed unused unavailable wrapper; same static renderer",
  "original_zip_modified":False,
  "full_android_compile_verified":False
 },indent=2)+"\n",encoding="utf-8")
