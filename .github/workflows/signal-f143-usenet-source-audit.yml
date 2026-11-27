@@ -1,4 +1,4 @@
-name: Signal F143 Usenet source audit
+name: Signal F143 compatibility source audit
 on:
   workflow_dispatch:
   push:
@@ -12,18 +12,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Extract original Usenet implementation without changing source
+      - name: Extract compiler-blocking source files without changing archive
         run: |
           python3 - <<'PY'
           import zipfile, pathlib, hashlib
           p = pathlib.Path("Signal_F143_DISC_TICKET_EPG_Fuse_Android_Conversion.zip")
+          names = {"UnityAppCore.swift", "SignalSearchGlyph.swift", "SignalSearchSpotlight.swift", "SignalSportsOnlinePlayer.swift", "SignalTopMenuVisuals.swift"}
+          out = pathlib.Path("compatibility-source")
+          out.mkdir()
           with zipfile.ZipFile(p) as z:
-              matches = [n for n in z.namelist() if pathlib.PurePosixPath(n).name == "SignalNativeUsenet.swift" and not n.startswith("__MACOSX/")]
-              assert matches, "Source not found"
-              for n in matches:
-                  data = z.read(n)
-                  print(n, hashlib.sha256(data).hexdigest(), flush=True)
-                  text = data.decode("utf-8")
-                  for i, line in enumerate(text.splitlines(), 1):
-                      print(f"{i:05d}: {line}")
+              for name in sorted(names):
+                  matches = [n for n in z.namelist() if pathlib.PurePosixPath(n).name == name and not n.startswith("__MACOSX/")]
+                  assert len(matches) == 1, (name, matches)
+                  data = z.read(matches[0])
+                  (out / name).write_bytes(data)
+                  print(name, hashlib.sha256(data).hexdigest(), flush=True)
           PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Signal-F143-Compatibility-Source
+          path: compatibility-source/
+          if-no-files-found: error
