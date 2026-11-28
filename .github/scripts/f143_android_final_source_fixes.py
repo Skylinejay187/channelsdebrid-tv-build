@@ -207,7 +207,13 @@ def cleanup_handle(source, name, allowed_types=None):
     if allowed_types and not any(t in m.group(2) for t in allowed_types):
         p.error("Unexpected cleanup handle type: "+m.group(2))
     return source[:m.start()]+m.group(1)+'@ObservationIgnored nonisolated(unsafe) '+m.group(2)+source[m.end():]
-b=cleanup_handle(b,"operation",("BlockOperation",))
+# Restrict the cleanup migration to the observable bitmap owner.
+# Another class in this file also owns a BlockOperation.
+owner_start=b.index("final class SignalBackdropBitmapOwner {")
+owner_end=b.index("\n}",owner_start)
+owner_body=b[owner_start:owner_end]
+owner_body=cleanup_handle(owner_body,"operation",("BlockOperation",))
+b=b[:owner_start]+owner_body+b[owner_end:]
 backdrop.write_text(b,encoding="utf-8")
 phone_text=phone.read_text(encoding="utf-8")
 phone_text=cleanup_handle(phone_text,"listener",("NWListener","SignalLANListener"))
