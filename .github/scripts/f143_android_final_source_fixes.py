@@ -196,38 +196,17 @@ if b.count(old)!=1:
 b=b.replace(old, ".onChange(of: loader.image, initial: true) { _, image in", 1)
 # Non-observable cleanup handles must remain accessible from deinit.
 def cleanup_handle(source, name, typ):
-    pattern=r'(?m)^([ \t]*)private var '+name+r': '+typ+r'
-a.report.write_text(json.dumps({
- "backdrop_owner_visibility":"internal",
- "native_observation_migration":["SignalPhoneSetupServer","PremiumRemoteImageLoader","SignalBackdropBitmapOwner"],
- "diagnostics_view":"split into heading/note/rows/empty components",
- "top_menu_preview_namespace":"removed unused unavailable wrapper; same static renderer",
- "original_zip_modified":False,
- "full_android_compile_verified":False
-},indent=2)+"\n",encoding="utf-8")
-print("Patched two confirmed compiler blockers in staged Signal Swift sources")
-
-    source,n=re.subn(pattern,r'\1@ObservationIgnored nonisolated(unsafe) private var '+name+': '+typ,source)
+    pattern=r'(?m)^([ \t]*)private var '+name+r': '+re.escape(typ)+r'$'
+    source,n=re.subn(pattern,lambda m: m.group(1)+'@ObservationIgnored nonisolated(unsafe) private var '+name+': '+typ,source)
     if n!=1:
         p.error("Cleanup handle signature changed: "+name)
     return source
-b=cleanup_handle(b,"operation",r"BlockOperation\?")
+b=cleanup_handle(b,"operation","BlockOperation?")
 backdrop.write_text(b,encoding="utf-8")
 phone_text=phone.read_text(encoding="utf-8")
-for name,typ in [("listener",r"SignalLANListener\?"),("clock",r"DispatchSourceTimer\?")]:
+for name,typ in [("listener","SignalLANListener?"),("clock","DispatchSourceTimer?")]:
     phone_text=cleanup_handle(phone_text,name,typ)
-# Preserve peer cleanup rather than discarding active connections.
-phone_text,n=re.subn(r'(?m)^([ \t]*)private var peers([ \t]*[:=][^\n]+)
-a.report.write_text(json.dumps({
- "backdrop_owner_visibility":"internal",
- "native_observation_migration":["SignalPhoneSetupServer","PremiumRemoteImageLoader","SignalBackdropBitmapOwner"],
- "diagnostics_view":"split into heading/note/rows/empty components",
- "top_menu_preview_namespace":"removed unused unavailable wrapper; same static renderer",
- "original_zip_modified":False,
- "full_android_compile_verified":False
-},indent=2)+"\n",encoding="utf-8")
-print("Patched two confirmed compiler blockers in staged Signal Swift sources")
-,r'\1@ObservationIgnored nonisolated(unsafe) private var peers\2',phone_text)
+phone_text,n=re.subn(r'(?m)^([ \t]*)private var peers([ \t]*[:=][^\n]+)$',r'\1@ObservationIgnored nonisolated(unsafe) private var peers\2',phone_text)
 if n!=1:
     p.error("Phone setup peers cleanup anchor changed")
 phone.write_text(phone_text,encoding="utf-8")
