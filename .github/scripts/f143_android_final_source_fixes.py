@@ -128,9 +128,61 @@ if m.count("    @Namespace private var previewSelection\n")!=1 or m.count("selec
 m=m.replace("    @Namespace private var previewSelection\n","",1).replace("selectionNamespace: previewSelection","selectionNamespace: nil",1)
 menu.write_text(m,encoding="utf-8")
 
+# Native Fuse uses Swift Observation rather than Combine object wrappers.
+# Migrate the three affected owners and their view storage together.
+import re
+
+def observable_owner(source, name):
+    signature = r'\bfinal class ' + name + r': ObservableObject \{'
+    source, count = re.subn(signature, 'final class ' + name + ' {', source)
+    if count != 1:
+        p.error("Unexpected observation owner signature: " + name)
+    source, count = re.subn(r'(?m)^([ \t]*(?:@MainActor[ \t]+)?)(final class '+name+r'\b)', r'\1@Observable \2', source)
+    if count != 1:
+        p.error("Cannot annotate observation owner: " + name)
+    # Owner declarations end at the next unindented closing brace.
+    start = source.index('final class '+name+' {')
+    end = source.find('\n}', start)
+    if end < 0:
+        p.error("Cannot locate owner boundary: " + name)
+    body = source[start:end]
+    body, count = re.subn(r'@Published[ \t]+', '', body)
+    if not count:
+        p.error("No published state found: " + name)
+    if 'objectWillChange' in body:
+        p.error("Explicit Combine notifications require separate migration: " + name)
+    return source[:start]+body+source[end:]
+
+def observation_import(source):
+    if 'import Observation\n' not in source:
+        source = 'import Observation\n' + source
+    return source
+
+phone = root/"SignalPhoneSetupServer.swift"
+phone_view = root/"SignalPhoneSetupSection.swift"
+art = root/"RemoteImageFit.swift"
+phone_text = observation_import(observable_owner(phone.read_text(), "SignalPhoneSetupServer"))
+art_text = art.read_text()
+boundary = art_text.index("#else\n\nimport Foundation")
+art_text = art_text[:boundary] + observation_import(observable_owner(art_text[boundary:], "PremiumRemoteImageLoader")).replace("import Observation\n#else", "#else\nimport Observation", 1)
+b = observation_import(observable_owner(b, "SignalBackdropBitmapOwner"))
+pv = phone_view.read_text()
+
+def state_owner(source, prop):
+    source, count = re.subn(r'(@StateObject)([ \t]+(?:private[ \t]+)?var[ \t]+'+prop+r'\b)', r'@State\2', source)
+    if count != 1:
+        p.error("Unexpected view state declaration: " + prop)
+    return source
+
+pv = state_owner(pv, "server")
+b = state_owner(state_owner(b, "loader"), "bitmap")
+for file, source in [(phone,phone_text),(phone_view,pv),(art,art_text),(backdrop,b)]:
+    file.write_text(source, encoding="utf-8")
+
 a.report.parent.mkdir(parents=True,exist_ok=True)
 a.report.write_text(json.dumps({
  "backdrop_owner_visibility":"internal",
+ "native_observation_migration":["SignalPhoneSetupServer","PremiumRemoteImageLoader","SignalBackdropBitmapOwner"],
  "diagnostics_view":"split into heading/note/rows/empty components",
  "top_menu_preview_namespace":"removed unused unavailable wrapper; same static renderer",
  "original_zip_modified":False,
