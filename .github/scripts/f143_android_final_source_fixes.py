@@ -195,20 +195,24 @@ if b.count(old)!=1:
 # Combine publisher. The existing target check and render body stay intact.
 b=b.replace(old, ".onChange(of: loader.image, initial: true) { _, image in", 1)
 # Non-observable cleanup handles must remain accessible from deinit.
-def cleanup_handle(source, name, typ):
-    pattern=r'(?m)^([ \t]*)private var '+name+r': '+re.escape(typ)+r'$'
-    source,n=re.subn(pattern,lambda m: m.group(1)+'@ObservationIgnored nonisolated(unsafe) private var '+name+': '+typ,source)
-    if n!=1:
-        p.error("Cleanup handle signature changed: "+name)
-    return source
-b=cleanup_handle(b,"operation","BlockOperation?")
+def cleanup_handle(source, name, allowed_types=None):
+    # Dry-run sees original declarations; full build may have promoted
+    # visibility or substituted the LAN transport. Preserve the declaration.
+    pattern=r'(?m)^([ \t]*)((?:private[ \t]+|internal[ \t]+)?var[ \t]+'+name+r'\b[ \t]*[:=][^\n]+)'
+    matches=list(re.finditer(pattern,source))
+    if len(matches)!=1:
+        candidates=[line.strip() for line in source.splitlines() if re.search(r'\bvar\s+'+name+r'\b',line)]
+        p.error("Cleanup handle signature changed: "+name+"; declarations="+repr(candidates))
+    m=matches[0]
+    if allowed_types and not any(t in m.group(2) for t in allowed_types):
+        p.error("Unexpected cleanup handle type: "+m.group(2))
+    return source[:m.start()]+m.group(1)+'@ObservationIgnored nonisolated(unsafe) '+m.group(2)+source[m.end():]
+b=cleanup_handle(b,"operation",("BlockOperation",))
 backdrop.write_text(b,encoding="utf-8")
 phone_text=phone.read_text(encoding="utf-8")
-for name,typ in [("listener","SignalLANListener?"),("clock","DispatchSourceTimer?")]:
-    phone_text=cleanup_handle(phone_text,name,typ)
-phone_text,n=re.subn(r'(?m)^([ \t]*)private var peers([ \t]*[:=][^\n]+)$',r'\1@ObservationIgnored nonisolated(unsafe) private var peers\2',phone_text)
-if n!=1:
-    p.error("Phone setup peers cleanup anchor changed")
+phone_text=cleanup_handle(phone_text,"listener",("NWListener","SignalLANListener"))
+phone_text=cleanup_handle(phone_text,"clock",("DispatchSourceTimer",))
+phone_text=cleanup_handle(phone_text,"peers")
 phone.write_text(phone_text,encoding="utf-8")
 
 a.report.parent.mkdir(parents=True,exist_ok=True)
