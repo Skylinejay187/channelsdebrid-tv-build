@@ -179,6 +179,59 @@ b = state_owner(state_owner(b, "loader"), "bitmap")
 for file, source in [(phone,phone_text),(phone_view,pv),(art,art_text),(backdrop,b)]:
     file.write_text(source, encoding="utf-8")
 
+# Follow-up compiler evidence: migrate the remaining consumers of the
+# already-migrated image loader and replace its publisher subscription.
+app = root/"DebridChannelsTVOSApp.swift"
+app_text=app.read_text(encoding="utf-8")
+app_text, count = re.subn(r'@StateObject(?=[ \t]+(?:private[ \t]+)?var[ \t]+\w+[ \t]*=[ \t]*PremiumRemoteImageLoader\()', '@State', app_text)
+if count < 2:
+    p.error("Expected remaining artwork loader consumers")
+app.write_text(app_text, encoding="utf-8")
+b=backdrop.read_text(encoding="utf-8")
+old=".onReceive(loader.$image) { image in"
+if b.count(old)!=1:
+    p.error("Backdrop publisher anchor changed")
+# Observe the image itself, including its initial value, rather than a
+# Combine publisher. The existing target check and render body stay intact.
+b=b.replace(old, ".onChange(of: loader.image, initial: true) { _, image in", 1)
+# Non-observable cleanup handles must remain accessible from deinit.
+def cleanup_handle(source, name, typ):
+    pattern=r'(?m)^([ \t]*)private var '+name+r': '+typ+r'
+a.report.write_text(json.dumps({
+ "backdrop_owner_visibility":"internal",
+ "native_observation_migration":["SignalPhoneSetupServer","PremiumRemoteImageLoader","SignalBackdropBitmapOwner"],
+ "diagnostics_view":"split into heading/note/rows/empty components",
+ "top_menu_preview_namespace":"removed unused unavailable wrapper; same static renderer",
+ "original_zip_modified":False,
+ "full_android_compile_verified":False
+},indent=2)+"\n",encoding="utf-8")
+print("Patched two confirmed compiler blockers in staged Signal Swift sources")
+
+    source,n=re.subn(pattern,r'\1@ObservationIgnored nonisolated(unsafe) private var '+name+': '+typ,source)
+    if n!=1:
+        p.error("Cleanup handle signature changed: "+name)
+    return source
+b=cleanup_handle(b,"operation",r"BlockOperation\?")
+backdrop.write_text(b,encoding="utf-8")
+phone_text=phone.read_text(encoding="utf-8")
+for name,typ in [("listener",r"SignalLANListener\?"),("clock",r"DispatchSourceTimer\?")]:
+    phone_text=cleanup_handle(phone_text,name,typ)
+# Preserve peer cleanup rather than discarding active connections.
+phone_text,n=re.subn(r'(?m)^([ \t]*)private var peers([ \t]*[:=][^\n]+)
+a.report.write_text(json.dumps({
+ "backdrop_owner_visibility":"internal",
+ "native_observation_migration":["SignalPhoneSetupServer","PremiumRemoteImageLoader","SignalBackdropBitmapOwner"],
+ "diagnostics_view":"split into heading/note/rows/empty components",
+ "top_menu_preview_namespace":"removed unused unavailable wrapper; same static renderer",
+ "original_zip_modified":False,
+ "full_android_compile_verified":False
+},indent=2)+"\n",encoding="utf-8")
+print("Patched two confirmed compiler blockers in staged Signal Swift sources")
+,r'\1@ObservationIgnored nonisolated(unsafe) private var peers\2',phone_text)
+if n!=1:
+    p.error("Phone setup peers cleanup anchor changed")
+phone.write_text(phone_text,encoding="utf-8")
+
 a.report.parent.mkdir(parents=True,exist_ok=True)
 a.report.write_text(json.dumps({
  "backdrop_owner_visibility":"internal",
